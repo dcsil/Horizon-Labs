@@ -41,6 +41,7 @@ The service reads the following environment variables (populate `backend/.env`):
 - Maintains `HumanMessage` / `AIMessage` history per `session_id` in memory.
 - Streams model tokens via `llm.astream(...)`, yielding each chunk to callers.
 - Appends both user input and model output to the session history for continuity.
+- Records telemetry events (latency, token usage, estimated cost) via structured logging when enabled.
 - Provides `reset_session(session_id)` to clear stored turns.
 
 > Because memory is in-process, conversation history resets when the server restarts or if multiple workers are used.
