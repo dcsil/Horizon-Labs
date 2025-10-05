@@ -28,8 +28,10 @@ The service reads the following environment variables (populate `backend/.env`):
 
 - `OPENROUTER_API_KEY` (required): key for the OpenRouter API.
 - `OPENROUTER_BASE_URL` (optional): defaults to `https://openrouter.ai/api/v1`.
-- `OPENROUTER_MODEL_NAME` (optional): defaults to `meta-llama/Meta-Llama-3.1-8B-Instruct`.
+- `OPENROUTER_MODEL_NAME` (optional): defaults to `google/gemini-2.0-flash-exp:free`.
 - `OPENROUTER_TIMEOUT_SECONDS` (optional): request timeout in seconds (default `40`).
+- `TELEMETRY_ENABLED` (optional): `true` to emit usage logs (default `true`).
+- `TELEMETRY_SAMPLE_RATE` (optional): fraction `0–1` of requests to log (default `1.0`).
 
 `backend/llm/settings.py` loads these values once per process using `dotenv` and `pydantic`.
 
@@ -37,7 +39,7 @@ The service reads the following environment variables (populate `backend/.env`):
 
 `backend/llm/service.py` wraps a single LangChain `ChatOpenAI` client:
 
-- Builds a system prompt that keeps responses concise and helpful.
+- Maintains per-service system prompts (chat vs. quiz scaffolding) to shape model behaviour.
 - Maintains `HumanMessage` / `AIMessage` history per `session_id` in memory.
 - Streams model tokens via `llm.astream(...)`, yielding each chunk to callers.
 - Appends both user input and model output to the session history for continuity.
@@ -55,6 +57,8 @@ Defined in `backend/app/main.py`:
   - Request body: `{ session_id, message, context?, metadata? }`.
   - Response format: `data:` lines with `{ "type": "token", "data": "..." }`, followed by an `event: end` sentinel.
 - `POST /chat/reset` – Clears in-memory history for a given session id.
+- `POST /ingest/upload` – Skeleton accepting a file + metadata and returning HTTP 501 until the ingestion pipeline is implemented.
+- `POST /quiz/stream` – SSE scaffold for quiz generation; currently returns an `event: error` noting the feature is pending.
 
 FastAPI’s dependency injection (`Depends(get_llm_service)`) ensures a single `LLMService` instance is reused per process.
 
@@ -85,4 +89,5 @@ Visit Swagger docs at `http://localhost:8000/docs` for interactive requests. Whe
 
 - CORS is fully open (`allow_origins="*"`) for ease of local testing; tighten before production use.
 - The SSE streaming response wraps errors in an `event: error` message and always emits `event: end` to let clients clean up.
+- Telemetry logging initialises only when `TELEMETRY_ENABLED=true`; events appear as JSON at INFO level on the `telemetry` logger.
 - No persistence layer is configured yet—consider plugging the session store into Redis or a database if you need durability or multi-worker support.
