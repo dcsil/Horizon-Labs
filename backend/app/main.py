@@ -4,17 +4,27 @@ import json
 from typing import AsyncGenerator
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from llm import LLMService, get_llm_service
 
-from .schemas import ChatStreamRequest
+from .schemas import ChatResetRequest, ChatStreamRequest
 
 app = FastAPI(title="Horizon Labs Chat API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
+    # Simple uptime probe for orchestrators and frontend checks.
     return {"status": "ok"}
 
 
@@ -49,3 +59,12 @@ async def chat_stream(
     }
 
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+
+@app.post("/chat/reset")
+async def chat_reset(
+    request: ChatResetRequest,
+    llm_service: LLMService = Depends(get_llm_service),
+) -> dict[str, str]:
+    llm_service.reset_session(request.session_id)
+    return {"status": "reset"}

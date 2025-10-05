@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Horizon Labs Chat Tester</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Horizon Labs Chat Tester</h1>
+        <p>Use this miniature client to send streaming chat requests to the FastAPI backend.</p>
+      </header>
+
+      <section class="controls">
+        <label class="field">
+          <span>Backend URL</span>
+          <input id="backend-url" type="text" value="http://localhost:8000/chat/stream" />
+        </label>
+        <label class="field">
+          <span>Session ID</span>
+          <input id="session-id" type="text" />
+        </label>
+        <label class="field">
+          <span>Context (optional)</span>
+          <textarea id="context" rows="3" placeholder="Any additional context for the model"></textarea>
+        </label>
+        <label class="field">
+          <span>Metadata (JSON, optional)</span>
+          <textarea id="metadata" rows="3" placeholder='{"source": "tester"}'></textarea>
+        </label>
+        <label class="field">
+          <span>Message</span>
+          <textarea id="message" rows="4" placeholder="Ask the assistant anything..." required></textarea>
+        </label>
+        <div class="actions">
+          <button id="send-btn">Send Message</button>
+          <button id="reset-btn" type="button">Reset Session</button>
+        </div>
+      </section>
+
+      <section class="output">
+        <h2>Streaming Response</h2>
+        <div id="stream-log"></div>
+      </section>
+    </main>
+    <script src="script.js" type="module"></script>
+  </body>
+</html>

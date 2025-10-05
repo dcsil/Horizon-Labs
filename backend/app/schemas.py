@@ -15,3 +15,7 @@ class ChatStreamRequest(BaseModel):
         default=None,
         description="Arbitrary key-value pairs forwarded to the prompt",
     )
+
+
+class ChatResetRequest(BaseModel):
+    session_id: str = Field(..., description="Identifier for the chat session to clear")

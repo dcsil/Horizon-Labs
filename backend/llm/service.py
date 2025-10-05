@@ -71,6 +71,9 @@ class LLMService:
         extras.append(f"Question:\n{question}")
         return "\n\n".join(extras)
 
+    def reset_session(self, session_id: str) -> None:
+        self._conversations.pop(session_id, None)
+
 
 _llm_service: Optional[LLMService] = None
 

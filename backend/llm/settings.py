@@ -17,7 +17,7 @@ class Settings(BaseModel):
         description="Base URL for the OpenRouter compatible API",
     )
     model_name: str = Field(
-        default="meta-llama/Meta-Llama-3.1-8B-Instruct",
+        default="deepseek/deepseek-chat-v3.1:free",
         description="LLM used for every request",
     )
     request_timeout_seconds: int = Field(40, ge=1, le=600)
@@ -35,6 +35,6 @@ def get_settings() -> Settings:
     return Settings(
         openrouter_api_key=api_key,
         openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-        model_name=os.environ.get("OPENROUTER_MODEL_NAME", "meta-llama/Meta-Llama-3.1-8B-Instruct"),
+        model_name=os.environ.get("OPENROUTER_MODEL_NAME", "deepseek/deepseek-chat-v3.1:free"),
         request_timeout_seconds=int(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "40")),
     )

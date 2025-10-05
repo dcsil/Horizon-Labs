@@ -1,0 +1,101 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fa;
+  color: #1f2933;
+}
+
+main.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+header {
+  margin-bottom: 1.5rem;
+}
+
+.controls {
+  display: grid;
+  gap: 1rem;
+  background: #ffffff;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px -20px rgba(15, 23, 42, 0.4);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field span {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+input,
+textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 1rem;
+  font-family: inherit;
+  background: #ffffff;
+}
+
+button {
+  justify-self: flex-start;
+  padding: 0.7rem 1.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 999px;
+  background: #2563eb;
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s ease-in-out, transform 0.1s ease-in-out;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+.output {
+  margin-top: 2rem;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 30px -20px rgba(15, 23, 42, 0.4);
+}
+
+#stream-log {
+  min-height: 160px;
+  white-space: pre-wrap;
+  font-family: Menlo, Consolas, monospace;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+#stream-log.error {
+  color: #fecaca;
+}
