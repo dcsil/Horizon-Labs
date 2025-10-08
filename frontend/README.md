@@ -14,6 +14,12 @@ pnpm dev
 bun dev
 ```
 
+Set `NEXT_PUBLIC_BACKEND_URL` in an `.env.local` file if your FastAPI service is not running on `http://localhost:8000`:
+
+```
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
