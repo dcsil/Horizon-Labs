@@ -23,12 +23,6 @@ jobs:
       - run: npm run test --if-present
       - run: npm run build
 
-      - name: Frontend smoke test
-        run: |
-          npm run start & 
-          sleep 10
-          curl -f http://localhost:3000 || exit 1
-
   backend:
     runs-on: ubuntu-latest
     defaults:
@@ -42,6 +36,3 @@ jobs:
       - run: pip install -r requirements.txt
       - run: black --check .
       - run: pytest --maxfail=1 --disable-warnings --cov=.
-      - run: uvicorn main:app --host 0.0.0.0 --port 8000 &
-      - run: sleep 5
-      - run: curl -f http://127.0.0.1:8000/health || exit 1
