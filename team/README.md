@@ -7,6 +7,7 @@ People at Horizon Labs
 - [Samuel Ruo, Computer Science](./sam_ruo.md)
 - [Olivia Wong, Computer Science](./olivia_wong.md)
 - [Vivian Song, Computer Science](./viviansong.md)
+- [Raiyan Raad, Computer Science](./raiyan_raad.md)
 
 
 ### Team Leader
