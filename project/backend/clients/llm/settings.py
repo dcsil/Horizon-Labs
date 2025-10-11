@@ -31,6 +31,16 @@ class Settings(BaseModel):
         le=1.0,
         description="Fraction of requests to log (1.0 = always)",
     )
+    friction_attempts_required: int = Field(
+        default=3,
+        ge=1,
+        description="Number of qualifying learner responses required before guidance is provided",
+    )
+    friction_min_words: int = Field(
+        default=15,
+        ge=1,
+        description="Minimum learner word count for a response to count toward the friction gate",
+    )
 
 
 @lru_cache
@@ -49,4 +59,6 @@ def get_settings() -> Settings:
         request_timeout_seconds=int(os.environ.get("OPENROUTER_TIMEOUT_SECONDS", "40")),
         telemetry_enabled=os.environ.get("TELEMETRY_ENABLED", "true").lower() == "true",
         telemetry_sample_rate=float(os.environ.get("TELEMETRY_SAMPLE_RATE", "1.0")),
+        friction_attempts_required=int(os.environ.get("FRICTION_ATTEMPTS_REQUIRED", "3")),
+        friction_min_words=int(os.environ.get("FRICTION_MIN_WORDS", "15")),
     )

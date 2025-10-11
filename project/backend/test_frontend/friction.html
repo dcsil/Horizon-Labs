@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Friction Gate Tester</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Adaptive Friction Playground</h1>
+        <p>
+          Exercise the friction gate behaviour: send learner messages, inspect the server-side mode,
+          and verify how many qualifying responses remain before guidance unlocks.
+        </p>
+      </header>
+
+      <section class="controls">
+        <div class="field">
+          <span>Backend URL</span>
+          <input id="backend-url" value="http://localhost:8000" />
+        </div>
+
+        <div class="field">
+          <span>Session ID</span>
+          <div class="actions">
+            <input id="session-id" placeholder="Enter or generate" />
+            <button id="random-session">Randomize</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span>Learner Message</span>
+          <textarea
+            id="message"
+            rows="4"
+            placeholder="Type a learner response…"
+          ></textarea>
+          <small id="word-count">Word count: 0</small>
+        </div>
+
+        <div class="actions">
+          <button id="send-btn">Send &amp; Stream</button>
+          <button id="reset-btn" class="secondary">Reset Session</button>
+          <button id="refresh-state" class="secondary">Refresh State</button>
+        </div>
+      </section>
+
+      <section class="output">
+        <h2>Session State</h2>
+        <p><strong>Next prompt:</strong> <span id="state-next-prompt">--</span></p>
+        <p><strong>Last prompt used:</strong> <span id="state-last-prompt">--</span></p>
+        <p>
+          <strong>Qualifying attempts:</strong>
+          <span id="state-attempts">0</span> /
+          <span id="state-threshold">0</span>
+        </p>
+        <p>
+          <strong>Responses needed for guidance:</strong>
+          <span id="state-remaining">--</span>
+        </p>
+        <p><strong>Minimum words per attempt:</strong> <span id="state-min-words">--</span></p>
+
+        <h2>Streaming Log</h2>
+        <pre id="stream-log"></pre>
+      </section>
+    </main>
+
+    <script src="friction.js"></script>
+  </body>
+</html>

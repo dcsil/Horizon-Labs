@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -90,6 +90,15 @@ async def chat_reset(
 ) -> dict[str, str]:
     llm_service.reset_session(request.session_id)
     return {"status": "reset"}
+
+
+@app.get("/debug/friction-state")
+def friction_state(
+    session_id: str = Query(..., description="Session to inspect"),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> dict[str, object]:
+    state = llm_service.get_session_state(session_id)
+    return {"session_id": session_id, **state}
 
 
 @app.post("/ingest/upload")

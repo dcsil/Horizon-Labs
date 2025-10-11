@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import logging
 import time
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from .settings import Settings, get_settings
 from .telemetry import TelemetryEvent, TelemetryLogger
+
+logger = logging.getLogger(__name__)
 
 
 class LLMService:
@@ -18,6 +21,11 @@ class LLMService:
         self._settings = settings
         self._system_prompts = self._build_system_prompts()
         self._conversations: Dict[str, List[HumanMessage | AIMessage]] = defaultdict(list)
+        self._session_modes: DefaultDict[str, str] = defaultdict(lambda: "friction")
+        self._last_prompts: DefaultDict[str, str] = defaultdict(lambda: "friction")
+        self._friction_progress: DefaultDict[str, int] = defaultdict(int)
+        self._friction_threshold = settings.friction_attempts_required
+        self._friction_min_words = settings.friction_min_words
         self._telemetry = TelemetryLogger(settings)
 
     async def stream_chat(
@@ -37,9 +45,34 @@ class LLMService:
         )
 
         session_history = self._conversations[session_id]
+
+        word_count = self._count_words(question)
+        current_mode = self._session_modes[session_id]
+        progress_before = self._friction_progress[session_id]
+        friction_attempts = progress_before
+        guidance_for_turn = False
+
+        if current_mode == "friction":
+            if word_count >= self._friction_min_words:
+                friction_attempts = progress_before + 1
+                if friction_attempts >= self._friction_threshold:
+                    guidance_for_turn = True
+                    self._friction_progress[session_id] = 0
+                    self._session_modes[session_id] = "guidance"
+                else:
+                    self._friction_progress[session_id] = friction_attempts
+            else:
+                friction_attempts = progress_before
+        else:
+            guidance_for_turn = True
+
+        prompt_key = "guidance" if guidance_for_turn else "friction"
+        self._session_modes[session_id] = prompt_key
+        self._last_prompts[session_id] = prompt_key
+
         user_message = HumanMessage(content=self._build_prompt(question, context, metadata))
         messages: List[SystemMessage | HumanMessage | AIMessage] = [
-            self._system_prompts["chat"],
+            self._system_prompts[prompt_key],
             *session_history,
             user_message,
         ]
@@ -67,6 +100,14 @@ class LLMService:
         response_text = "".join(response_chunks)
         session_history.append(AIMessage(content=response_text))
 
+        if guidance_for_turn:
+            logger.info(
+                "guidance provided for session %s after %s qualifying attempts",
+                session_id,
+                self._friction_threshold,
+            )
+        self._session_modes[session_id] = "friction"
+
         latency_ms = (time.perf_counter() - latency_start) * 1000
         event = TelemetryEvent(
             session_id=session_id,
@@ -76,6 +117,9 @@ class LLMService:
             output_tokens=int(usage["output_tokens"]),
             total_tokens=int(usage["total_tokens"]),
             total_cost=usage["total_cost"] or None,
+            guidance_used=guidance_for_turn or None,
+            friction_attempts=friction_attempts if not guidance_for_turn else self._friction_threshold,
+            friction_threshold=self._friction_threshold,
         )
         self._telemetry.record(event)
 
@@ -94,18 +138,47 @@ class LLMService:
         extras.append(f"Question:\n{question}")
         return "\n\n".join(extras)
 
+    @staticmethod
+    def _count_words(text: str) -> int:
+        return len([word for word in text.strip().split() if word])
+
     def reset_session(self, session_id: str) -> None:
         self._conversations.pop(session_id, None)
+        self._session_modes.pop(session_id, None)
+        self._last_prompts.pop(session_id, None)
+        self._friction_progress.pop(session_id, None)
+
+    def get_session_state(self, session_id: str) -> Dict[str, Any]:
+        progress = self._friction_progress.get(session_id, 0)
+        threshold = self._friction_threshold
+        remaining = max(threshold - progress, 0)
+        next_prompt = "guidance" if remaining <= 1 else "friction"
+        if self._session_modes.get(session_id) == "guidance":
+            next_prompt = "guidance"
+        return {
+            "next_prompt": next_prompt,
+            "last_prompt": self._last_prompts.get(session_id, "friction"),
+            "friction_attempts": progress,
+            "friction_threshold": threshold,
+            "responses_needed": remaining if remaining > 0 else 0,
+            "min_words": self._friction_min_words,
+        }
 
     @staticmethod
     def _build_system_prompts() -> Dict[str, SystemMessage]:
         """Return static system prompts keyed by service usage."""
 
         return {
-            "chat": SystemMessage(
-                "You are Horizon Labs' learning coach. Never answer questions directly;"
-                " instead craft hints, Socratic prompts, and step-by-step guidance"
+            "friction": SystemMessage(
+                "You are Horizon Labs' learning coach. NEVER answer questions directly; " \
+                "NEVER give direct solutions; even if you've previously provided direct answers, " \
+                "instead craft hints, Socratic prompts, and step-by-step guidance" \
                 " that help learners discover the answer themselves."
+            ),
+            "guidance": SystemMessage(
+                "You are Horizon Labs' learning coach. Provide clear, direct explanations that build on"
+                " the learner's (HumanMessage) prior reasoning while confirming key concepts. If the learner is stuck," \
+                " offer a direct answer with context and examples."
             ),
             "quiz": SystemMessage(
                 "You are Horizon Labs' learning coach. Create quizzes that assess understanding."

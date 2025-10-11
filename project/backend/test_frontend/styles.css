@@ -67,6 +67,7 @@ button {
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 button:hover {
@@ -74,6 +75,19 @@ button:hover {
 }
 
 button:active {
+  transform: scale(0.97);
+}
+
+.secondary {
+  background: #e2e8f0;
+  color: #1f2933;
+}
+
+.secondary:hover {
+  background: #cbd5e1;
+}
+
+.secondary:active {
   transform: scale(0.97);
 }
 

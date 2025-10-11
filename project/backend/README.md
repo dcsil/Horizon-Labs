@@ -37,6 +37,8 @@ The service reads the following environment variables (populate `backend/.env`):
 - `OPENROUTER_TIMEOUT_SECONDS` (optional): request timeout in seconds (default `40`).
 - `TELEMETRY_ENABLED` (optional): `true` to emit usage logs (default `true`).
 - `TELEMETRY_SAMPLE_RATE` (optional): fraction `0–1` of requests to log (default `1.0`).
+- `FRICTION_ATTEMPTS_REQUIRED` (optional): number of qualifying learner responses before direct guidance is unlocked (default `3`).
+- `FRICTION_MIN_WORDS` (optional): minimum learner word count for a response to count toward the friction gate (default `15`).
 
 `backend/clients/llm/settings.py` loads these values once per process using `dotenv` and `pydantic`.
 
@@ -44,7 +46,8 @@ The service reads the following environment variables (populate `backend/.env`):
 
 `backend/clients/llm/service.py` wraps a single LangChain `ChatOpenAI` client:
 
-- Maintains per-service system prompts (chat vs. quiz scaffolding) to shape model behaviour.
+- Maintains per-service system prompts (friction vs. guidance vs. quiz) to shape model behaviour.
+- Applies an adaptive friction gate, requiring a configurable number of substantive learner responses before direct answers are given.
 - Maintains `HumanMessage` / `AIMessage` history per `session_id` in memory.
 - Streams model tokens via `llm.astream(...)`, yielding each chunk to callers.
 - Appends both user input and model output to the session history for continuity.
@@ -64,6 +67,7 @@ Defined in `backend/app/main.py`:
 - `POST /chat/reset` – Clears in-memory history for a given session id.
 - `POST /ingest/upload` – Skeleton accepting a file + metadata and returning HTTP 501 until the ingestion pipeline is implemented.
 - `POST /quiz/stream` – SSE scaffold for quiz generation; currently returns an `event: error` noting the feature is pending.
+- `GET /debug/friction-state` – Development helper that returns the adaptive friction counters for a given `session_id`.
 
 FastAPI’s dependency injection (`Depends(get_llm_service)`) ensures a single `LLMService` instance is reused per process.
 
