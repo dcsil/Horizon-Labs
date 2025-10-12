@@ -70,6 +70,27 @@ button {
   align-items: center;
 }
 
+.session-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.session-picker select {
+  flex: 1 1 220px;
+  min-width: 200px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  background: #ffffff;
+  font-size: 0.95rem;
+}
+
+#session-id[readonly] {
+  background: #f1f5f9;
+  color: #1f2933;
+}
+
 button:hover {
   background: #1d4ed8;
 }
@@ -112,4 +133,15 @@ button:active {
 
 #stream-log.error {
   color: #fecaca;
+}
+
+.history-log {
+  min-height: 120px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-family: Menlo, Consolas, monospace;
+  padding: 1rem;
+  white-space: pre-wrap;
+  overflow-y: auto;
 }

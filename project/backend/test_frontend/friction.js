@@ -1,13 +1,18 @@
+const state = { sessions: [] };
+
 const $backendUrl = document.querySelector('#backend-url');
+const $sessionSelect = document.querySelector('#session-select');
+const $useSessionBtn = document.querySelector('#use-session');
+const $newSessionBtn = document.querySelector('#new-session');
 const $sessionId = document.querySelector('#session-id');
-const $randomSession = document.querySelector('#random-session');
 const $message = document.querySelector('#message');
 const $wordCount = document.querySelector('#word-count');
 const $sendBtn = document.querySelector('#send-btn');
 const $resetBtn = document.querySelector('#reset-btn');
 const $refreshBtn = document.querySelector('#refresh-state');
+const $historyBtn = document.querySelector('#load-history');
 const $log = document.querySelector('#stream-log');
-
+const $historyLog = document.querySelector('#history-log');
 const $stateNextPrompt = document.querySelector('#state-next-prompt');
 const $stateLastPrompt = document.querySelector('#state-last-prompt');
 const $stateAttempts = document.querySelector('#state-attempts');
@@ -18,17 +23,16 @@ const $stateMinWords = document.querySelector('#state-min-words');
 const decoder = new TextDecoder('utf-8');
 let abortController = null;
 
-function trimTrailingSlash(url) {
-  return url.replace(/\/$/, '');
-}
+const trimTrailingSlash = (url) => url.replace(/\/$/, '');
 
-function ensureSessionId() {
-  if ($sessionId.value.trim()) {
-    return $sessionId.value.trim();
+function appendToLog(text, isError = false) {
+  $log.textContent += text;
+  if (isError) {
+    $log.classList.add('error');
+  } else {
+    $log.classList.remove('error');
   }
-  const id = crypto.randomUUID();
-  $sessionId.value = id;
-  return id;
+  $log.scrollTop = $log.scrollHeight;
 }
 
 function updateWordCount() {
@@ -36,9 +40,119 @@ function updateWordCount() {
   $wordCount.textContent = `Word count: ${words.length}`;
 }
 
+function renderHistory(messages) {
+  if (!messages || messages.length === 0) {
+    $historyLog.textContent = 'No persisted history found for this session.';
+    return;
+  }
+
+  const lines = messages.map((entry) => {
+    const ts = entry.created_at ? new Date(entry.created_at).toLocaleString() : 'unknown time';
+    const role = entry.role === 'assistant' ? 'AI' : entry.role === 'user' ? 'User' : 'System';
+    return `[${ts}] ${role}: ${entry.content ?? ''}`;
+  });
+
+  $historyLog.textContent = lines.join('\n');
+}
+
+function renderSessions(activeId) {
+  const currentActive = activeId || $sessionId.value.trim();
+  $sessionSelect.innerHTML = '';
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '-- Select existing session --';
+  $sessionSelect.appendChild(placeholder);
+
+  let resolvedId = '';
+  state.sessions.forEach((session) => {
+    const option = document.createElement('option');
+    option.value = session.session_id;
+
+    const parts = [session.session_id];
+    if (typeof session.message_count === 'number') {
+      parts.push(`msgs: ${session.message_count}`);
+    }
+    if (session.updated_at) {
+      const parsed = new Date(session.updated_at);
+      if (!Number.isNaN(parsed.getTime())) {
+        parts.push(`updated ${parsed.toLocaleString()}`);
+      }
+    }
+
+    option.textContent = parts.join(' • ');
+    if (!resolvedId && currentActive && session.session_id === currentActive) {
+      resolvedId = currentActive;
+      option.selected = true;
+    }
+    $sessionSelect.appendChild(option);
+  });
+
+  if (!resolvedId && state.sessions.length > 0) {
+    resolvedId = state.sessions[0].session_id;
+    const option = [...$sessionSelect.options].find((opt) => opt.value === resolvedId);
+    if (option) option.selected = true;
+  }
+
+  if (resolvedId) {
+    $sessionId.value = resolvedId;
+  } else {
+    $sessionSelect.value = '';
+    $sessionId.value = '';
+  }
+}
+
+async function refreshSessionsList(preferredId) {
+  const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
+  try {
+    const response = await fetch(`${base}/chat/sessions`);
+    if (!response.ok) {
+      throw new Error(`Failed to load sessions: ${response.status} ${response.statusText}`);
+    }
+    const payload = await response.json();
+    let sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+    if (preferredId && !sessions.some((session) => session.session_id === preferredId)) {
+      sessions = [
+        {
+          session_id: preferredId,
+          updated_at: new Date().toISOString(),
+          message_count: 0,
+        },
+        ...sessions,
+      ];
+    }
+    state.sessions = sessions;
+  } catch (err) {
+    appendToLog(`Session list error: ${err instanceof Error ? err.message : String(err)}\n`, true);
+    if (preferredId && !state.sessions.some((session) => session.session_id === preferredId)) {
+      state.sessions = [
+        { session_id: preferredId, updated_at: new Date().toISOString(), message_count: 0 },
+        ...state.sessions,
+      ];
+    }
+  }
+  renderSessions(preferredId);
+}
+
+function ensureSessionId() {
+  const current = $sessionId.value.trim();
+  if (current) return current;
+  if (state.sessions.length > 0) {
+    const first = state.sessions[0].session_id;
+    $sessionId.value = first;
+    $sessionSelect.value = first;
+    return first;
+  }
+  return '';
+}
+
 async function refreshState() {
   const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
   const sessionId = ensureSessionId();
+  if (!sessionId) {
+    renderState(null);
+    return;
+  }
 
   try {
     const response = await fetch(`${base}/debug/friction-state?session_id=${encodeURIComponent(sessionId)}`);
@@ -49,7 +163,7 @@ async function refreshState() {
     renderState(data);
   } catch (err) {
     renderState(null);
-    appendToLog(`State error: ${err.message}\n`, true);
+    appendToLog(`State error: ${err instanceof Error ? err.message : String(err)}\n`, true);
   }
 }
 
@@ -78,53 +192,36 @@ function renderState(data) {
   $stateMinWords.textContent = data.min_words ?? '--';
 }
 
-function appendToLog(text, isError = false) {
-  $log.textContent += text;
-  if (isError) {
-    $log.classList.add('error');
-  } else {
-    $log.classList.remove('error');
+async function loadHistory() {
+  const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
+  const sessionId = ensureSessionId();
+  if (!sessionId) {
+    renderHistory([]);
+    return;
   }
-  $log.scrollTop = $log.scrollHeight;
-}
-
-function processEvent(rawEvent) {
-  if (!rawEvent) return;
-
-  const lines = rawEvent.split('\n');
-  let eventType = 'message';
-  let dataLine = '';
-
-  for (const line of lines) {
-    if (line.startsWith('event:')) {
-      eventType = line.replace('event:', '').trim();
-    }
-    if (line.startsWith('data:')) {
-      dataLine = line.replace('data:', '').trim();
-    }
-  }
-
-  if (!dataLine) return;
 
   try {
-    const payload = JSON.parse(dataLine);
-    if (eventType === 'error') {
-      appendToLog(`\n[error] ${payload.message}\n`, true);
-      if (abortController) abortController.abort();
+    const response = await fetch(`${base}/chat/history?session_id=${encodeURIComponent(sessionId)}`);
+    if (response.status === 404) {
+      renderHistory([]);
       return;
     }
-    if (eventType === 'end') {
-      appendToLog('\n[stream complete]\n');
-      refreshState();
-      return;
+    if (!response.ok) {
+      throw new Error(`Failed to load history: ${response.status} ${response.statusText}`);
     }
-    if (payload.type === 'token') {
-      appendToLog(payload.data);
-    }
+    const data = await response.json();
+    renderHistory(data.messages || []);
   } catch (err) {
-    appendToLog(`\nFailed to parse event payload: ${err.message}\n`, true);
-    if (abortController) abortController.abort();
+    $historyLog.textContent = `History error: ${err instanceof Error ? err.message : String(err)}`;
   }
+}
+
+async function setActiveSession(sessionId) {
+  if (!sessionId) return;
+  $sessionId.value = sessionId;
+  await refreshSessionsList(sessionId);
+  await refreshState();
+  await loadHistory();
 }
 
 async function sendMessage() {
@@ -134,9 +231,17 @@ async function sendMessage() {
   }
 
   const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
-  const sessionId = ensureSessionId();
-  const input = $message.value.trim();
+  let sessionId = ensureSessionId();
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    state.sessions = [
+      { session_id: sessionId, updated_at: new Date().toISOString(), message_count: 0 },
+      ...state.sessions,
+    ];
+    renderSessions(sessionId);
+  }
 
+  const input = $message.value.trim();
   if (!input) {
     appendToLog('Please enter a learner message before sending.\n', true);
     return;
@@ -147,9 +252,9 @@ async function sendMessage() {
   $sendBtn.disabled = true;
   $resetBtn.disabled = true;
   $refreshBtn.disabled = true;
+  $historyBtn.disabled = true;
 
-  await refreshState();
-
+  let encounteredError = false;
   abortController = new AbortController();
 
   try {
@@ -167,30 +272,72 @@ async function sendMessage() {
     const reader = response.body.getReader();
     let buffer = '';
 
+    const processEvent = (rawEvent) => {
+      if (!rawEvent) return;
+
+      const lines = rawEvent.split('\n');
+      let eventType = 'message';
+      let dataLine = '';
+
+      lines.forEach((line) => {
+        if (line.startsWith('event:')) eventType = line.replace('event:', '').trim();
+        if (line.startsWith('data:')) dataLine = line.replace('data:', '').trim();
+      });
+
+      if (!dataLine) return;
+
+      try {
+        const payload = JSON.parse(dataLine);
+        if (eventType === 'error') {
+          encounteredError = true;
+          appendToLog(`\n[error] ${payload.message}\n`, true);
+          abortController.abort();
+          return;
+        }
+        if (eventType === 'end') {
+          appendToLog('\n[stream complete]\n');
+          return;
+        }
+        if (payload.type === 'token') {
+          appendToLog(payload.data);
+        }
+      } catch (err) {
+        encounteredError = true;
+        appendToLog(`\nFailed to parse event payload: ${err instanceof Error ? err.message : String(err)}\n`, true);
+        abortController.abort();
+      }
+    };
+
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const events = buffer.split('\n\n');
       buffer = events.pop() ?? '';
-      for (const event of events) {
-        processEvent(event.trim());
-      }
+      events.forEach((event) => processEvent(event.trim()));
     }
 
     if (buffer.trim()) {
       processEvent(buffer.trim());
     }
+
+    if (!encounteredError) {
+      await refreshState();
+      await loadHistory();
+      await refreshSessionsList(sessionId);
+    }
   } catch (err) {
     if (!(abortController && abortController.signal.aborted)) {
-      appendToLog(`\nStreaming error: ${err.message}\n`, true);
+      appendToLog(`\nStreaming error: ${err instanceof Error ? err.message : String(err)}\n`, true);
       await refreshState();
+      await loadHistory();
     }
   } finally {
     abortController = null;
     $sendBtn.disabled = false;
     $resetBtn.disabled = false;
     $refreshBtn.disabled = false;
+    $historyBtn.disabled = false;
   }
 }
 
@@ -198,7 +345,7 @@ async function resetSession() {
   const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
   const sessionId = $sessionId.value.trim();
   if (!sessionId) {
-    appendToLog('Set a session id before resetting.\n', true);
+    appendToLog('Select or create a session before resetting.\n', true);
     return;
   }
 
@@ -212,13 +359,27 @@ async function resetSession() {
       throw new Error(`Reset failed: ${response.status} ${response.statusText}`);
     }
     $log.textContent = '[session cleared]\n';
-    await refreshState();
+    state.sessions = state.sessions.filter((session) => session.session_id !== sessionId);
+    await refreshSessionsList();
+    renderState(null);
+    renderHistory([]);
+    $sessionId.value = '';
   } catch (err) {
-    appendToLog(`Reset error: ${err.message}\n`, true);
+    appendToLog(`Reset error: ${err instanceof Error ? err.message : String(err)}\n`, true);
   }
 }
 
-$message.addEventListener('input', updateWordCount);
+async function createNewSession() {
+  const id = crypto.randomUUID();
+  state.sessions = [
+    { session_id: id, updated_at: new Date().toISOString(), message_count: 0 },
+    ...state.sessions.filter((session) => session.session_id !== id),
+  ];
+  renderSessions(id);
+  renderState(null);
+  renderHistory([]);
+}
+
 $sendBtn.addEventListener('click', (event) => {
   event.preventDefault();
   sendMessage();
@@ -234,15 +395,45 @@ $refreshBtn.addEventListener('click', (event) => {
   refreshState();
 });
 
-$randomSession.addEventListener('click', (event) => {
+$historyBtn.addEventListener('click', (event) => {
   event.preventDefault();
-  const id = crypto.randomUUID();
-  $sessionId.value = id;
-  refreshState();
+  loadHistory();
 });
 
+$newSessionBtn.addEventListener('click', (event) => {
+  event.preventDefault();
+  createNewSession();
+});
+
+$useSessionBtn.addEventListener('click', (event) => {
+  event.preventDefault();
+  const selected = $sessionSelect.value;
+  if (!selected) {
+    appendToLog('Select a session from the dropdown first.\n', true);
+    return;
+  }
+  setActiveSession(selected);
+});
+
+$sessionSelect.addEventListener('change', () => {
+  const selected = $sessionSelect.value;
+  if (selected) {
+    $sessionId.value = selected;
+  }
+});
+
+$message.addEventListener('input', updateWordCount);
+
 window.addEventListener('load', () => {
-  ensureSessionId();
   updateWordCount();
-  refreshState();
+  (async () => {
+    await refreshSessionsList();
+    const active = ensureSessionId();
+    if (active) {
+      await setActiveSession(active);
+    } else {
+      renderState(null);
+      renderHistory([]);
+    }
+  })();
 });

@@ -2,6 +2,16 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Chat demo smoke tests', () => {
   test('renders the chat layout and welcome content', async ({ page }) => {
+    await page.route('**/chat/history?**', async (route) => {
+      const url = new URL(route.request().url());
+      const payload = { session_id: url.searchParams.get('session_id'), messages: [] };
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    });
+
     await page.goto('/chat');
 
     await expect(page.getByRole('heading', { level: 1, name: 'Hello Chat' })).toBeVisible();
@@ -16,9 +26,41 @@ test.describe('Chat demo smoke tests', () => {
     await expect(
       page.getByText('Instructor Mode Banner (feature flag controlled)'),
     ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New Chat' })).toBeVisible();
+    await expect(page.getByTestId('session-select').first()).toBeVisible();
   });
 
   test('streams assistant tokens when the backend responds', async ({ page }) => {
+    let historyCallCount = 0;
+    await page.route('**/chat/history?**', async (route) => {
+      historyCallCount += 1;
+      const url = new URL(route.request().url());
+      const sessionId = url.searchParams.get('session_id');
+      const payload =
+        historyCallCount === 1
+          ? { session_id: sessionId, messages: [] }
+          : {
+              session_id: sessionId,
+              messages: [
+                {
+                  role: 'user',
+                  content: 'What is recursion?',
+                  created_at: new Date().toISOString(),
+                },
+                {
+                  role: 'assistant',
+                  content: 'Hello learner! Keep exploring recursion.',
+                  created_at: new Date().toISOString(),
+                },
+              ],
+            };
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    });
+
     await page.route('**/chat/stream', async (route) => {
       await route.fulfill({
         status: 200,
@@ -54,6 +96,16 @@ test.describe('Chat demo smoke tests', () => {
   });
 
   test('shows an inline error when the backend stream fails', async ({ page }) => {
+    await page.route('**/chat/history?**', async (route) => {
+      const url = new URL(route.request().url());
+      const payload = { session_id: url.searchParams.get('session_id'), messages: [] };
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    });
+
     await page.route('**/chat/stream', async (route) => {
       await route.fulfill({
         status: 200,

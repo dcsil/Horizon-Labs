@@ -1,12 +1,23 @@
 """Firestore client bootstrapper."""
 
 from __future__ import annotations
+
 import os
-from google.cloud import firestore  # type: ignore[import]
+
+try:  # pragma: no cover - optional dependency
+    from google.cloud import firestore  # type: ignore[import]
+except Exception:  # pragma: no cover - optional dependency missing
+    firestore = None  # type: ignore[assignment]
 
 
 def get_firestore():
     """Return a Firestore client using your Firebase project credentials."""
+
+    if firestore is None:
+        raise RuntimeError(
+            "google-cloud-firestore is not installed. Install the package or configure the application "
+            "to use an in-memory chat repository."
+        )
 
     project_id = os.getenv("FIREBASE_PROJECT_ID")
 

@@ -37,12 +37,18 @@
         <div class="actions">
           <button id="send-btn">Send Message</button>
           <button id="reset-btn" type="button">Reset Session</button>
+          <button id="history-btn" type="button" class="secondary">Load Persisted History</button>
         </div>
       </section>
 
       <section class="output">
         <h2>Streaming Response</h2>
         <div id="stream-log"></div>
+      </section>
+
+      <section class="output">
+        <h2>Persisted History</h2>
+        <div id="history-log" class="history-log">No history loaded yet.</div>
       </section>
     </main>
     <script src="script.js" type="module"></script>

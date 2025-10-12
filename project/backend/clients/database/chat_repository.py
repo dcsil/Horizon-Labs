@@ -4,13 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Literal, Optional, Protocol
 
-try:
+try:  # pragma: no cover - optional dependency
     from google.cloud import firestore  # type: ignore[import]
-except Exception as exc:  # pragma: no cover - fail fast when dependency missing
-    raise RuntimeError(
-        "google-cloud-firestore is required for chat persistence. Install the package and "
-        "ensure service account credentials are configured."
-    ) from exc
+except Exception:  # pragma: no cover - optional dependency missing
+    firestore = None  # type: ignore[assignment]
 
 from .firebase import get_firestore
 
@@ -68,7 +65,7 @@ class ChatSessionRecord:
             "session_mode": self.session_mode,
             "last_prompt": self.last_prompt,
         }
-        payload["updated_at"] = firestore.SERVER_TIMESTAMP
+        payload["updated_at"] = _firestore_timestamp()
         return payload
 
     @staticmethod
@@ -88,6 +85,13 @@ class ChatSessionRecord:
         )
 
 
+@dataclass(frozen=True)
+class ChatSessionSummary:
+    session_id: str
+    updated_at: datetime
+    message_count: int
+
+
 class ChatRepository(Protocol):
     """Persistence operations required by the LLM service."""
 
@@ -100,11 +104,19 @@ class ChatRepository(Protocol):
     def delete_session(self, session_id: str) -> None:
         ...
 
+    def list_sessions(self) -> List[ChatSessionSummary]:
+        ...
+
 
 class FirestoreChatRepository:
     """Firestore-backed implementation used in production."""
 
     def __init__(self, *, collection_name: str = "chat_sessions") -> None:
+        if not _firestore_available():
+            raise RuntimeError(
+                "google-cloud-firestore is required for FirestoreChatRepository. Install the package "
+                "and configure credentials, or use InMemoryChatRepository instead."
+            )
         self._client = get_firestore()
         self._collection = self._client.collection(collection_name)
 
@@ -121,6 +133,28 @@ class FirestoreChatRepository:
 
     def delete_session(self, session_id: str) -> None:
         self._collection.document(session_id).delete()
+
+    def list_sessions(self) -> List[ChatSessionSummary]:
+        summaries: List[ChatSessionSummary] = []
+        for doc in self._collection.stream():
+            data = doc.to_dict() or {}
+            updated_at = data.get("updated_at")
+            if hasattr(updated_at, "to_datetime"):
+                updated = updated_at.to_datetime()
+            elif isinstance(updated_at, datetime):
+                updated = updated_at
+            else:
+                updated = datetime.now(timezone.utc)
+            messages = data.get("messages", []) or []
+            summaries.append(
+                ChatSessionSummary(
+                    session_id=doc.id,
+                    updated_at=updated,
+                    message_count=len(messages),
+                )
+            )
+        summaries.sort(key=lambda item: item.updated_at, reverse=True)
+        return summaries
 
 
 class InMemoryChatRepository:
@@ -141,6 +175,37 @@ class InMemoryChatRepository:
     def delete_session(self, session_id: str) -> None:
         self._store.pop(session_id, None)
 
+    def list_sessions(self) -> List[ChatSessionSummary]:
+        summaries: List[ChatSessionSummary] = []
+        for session_id, payload in self._store.items():
+            messages = payload.get("messages", []) or []
+            updated_at = payload.get("updated_at")
+            if isinstance(updated_at, datetime):
+                updated = updated_at
+            elif hasattr(updated_at, "to_datetime"):
+                updated = updated_at.to_datetime()
+            else:
+                updated = datetime.now(timezone.utc)
+            summaries.append(
+                ChatSessionSummary(
+                    session_id=session_id,
+                    updated_at=updated,
+                    message_count=len(messages),
+                )
+            )
+        summaries.sort(key=lambda item: item.updated_at, reverse=True)
+        return summaries
+
 
 def serialize_messages(messages: Iterable[ChatMessageRecord]) -> List[Dict[str, str]]:
     return [message.to_dict() for message in messages]
+
+
+def _firestore_available() -> bool:
+    return firestore is not None
+
+
+def _firestore_timestamp():
+    if firestore is not None:
+        return firestore.SERVER_TIMESTAMP
+    return datetime.now(timezone.utc)

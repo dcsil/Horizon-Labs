@@ -23,11 +23,19 @@
         </div>
 
         <div class="field">
-          <span>Session ID</span>
-          <div class="actions">
-            <input id="session-id" placeholder="Enter or generate" />
-            <button id="random-session">Randomize</button>
+          <span>Select Session</span>
+          <div class="session-picker">
+            <select id="session-select">
+              <option value="">-- Select existing session --</option>
+            </select>
+            <button id="use-session">Use Selected</button>
+            <button id="new-session" class="secondary">Create New</button>
           </div>
+        </div>
+
+        <div class="field">
+          <span>Active Session ID</span>
+          <input id="session-id" readonly />
         </div>
 
         <div class="field">
@@ -44,6 +52,7 @@
           <button id="send-btn">Send &amp; Stream</button>
           <button id="reset-btn" class="secondary">Reset Session</button>
           <button id="refresh-state" class="secondary">Refresh State</button>
+          <button id="load-history" class="secondary">Load History</button>
         </div>
       </section>
 
@@ -64,6 +73,9 @@
 
         <h2>Streaming Log</h2>
         <pre id="stream-log"></pre>
+
+        <h2>Persisted History</h2>
+        <pre id="history-log" class="history-log">No history loaded yet.</pre>
       </section>
     </main>
 

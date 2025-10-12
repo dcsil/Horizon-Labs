@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import logging
 import time
-from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional, Set
+from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -14,6 +14,8 @@ from ..database.chat_repository import (
     ChatRepository,
     ChatSessionRecord,
     FirestoreChatRepository,
+    InMemoryChatRepository,
+    ChatSessionSummary,
 )
 from .settings import Settings, get_settings
 from .telemetry import TelemetryEvent, TelemetryLogger
@@ -35,7 +37,6 @@ class LLMService:
         self._friction_min_words = settings.friction_min_words
         self._telemetry = TelemetryLogger(settings)
         self._repository: ChatRepository = repository or self._select_repository()
-        self._loaded_sessions: Set[str] = set()
 
     async def stream_chat(
         self,
@@ -168,20 +169,25 @@ class LLMService:
         return len([word for word in text.strip().split() if word])
 
     def _select_repository(self) -> ChatRepository:
-        return FirestoreChatRepository()
+        try:
+            return FirestoreChatRepository()
+        except RuntimeError as exc:
+            logger.warning("Firestore unavailable (%s); falling back to in-memory chat repository.", exc)
+            return InMemoryChatRepository()
 
     def _ensure_session_loaded(self, session_id: str) -> None:
-        if session_id in self._loaded_sessions:
-            return
         try:
             record = self._repository.load_session(session_id)
         except Exception:
             logger.exception("Failed loading session %s from Firestore", session_id)
             raise
-
-        if record:
+        if record is None:
+            self._conversations.pop(session_id, None)
+            self._friction_progress.pop(session_id, None)
+            self._session_modes.pop(session_id, None)
+            self._last_prompts.pop(session_id, None)
+        else:
             self._hydrate_session_from_record(record)
-        self._loaded_sessions.add(session_id)
 
     def _hydrate_session_from_record(self, record: ChatSessionRecord) -> None:
         session_messages: List[HumanMessage | AIMessage | SystemMessage] = []
@@ -290,6 +296,23 @@ class LLMService:
 
         return {"session_id": session_id, "messages": history}
 
+    def list_sessions(self) -> List[Dict[str, Any]]:
+        try:
+            summaries = self._repository.list_sessions()
+        except Exception:
+            logger.exception("Failed listing chat sessions from repository")
+            raise
+        payload: List[Dict[str, Any]] = []
+        for summary in summaries:
+            payload.append(
+                {
+                    "session_id": summary.session_id,
+                    "updated_at": summary.updated_at.isoformat(),
+                    "message_count": summary.message_count,
+                }
+            )
+        return payload
+
     def reset_session(self, session_id: str) -> None:
         try:
             self._repository.delete_session(session_id)
@@ -300,7 +323,6 @@ class LLMService:
         self._session_modes.pop(session_id, None)
         self._last_prompts.pop(session_id, None)
         self._friction_progress.pop(session_id, None)
-        self._loaded_sessions.discard(session_id)
 
     def get_session_state(self, session_id: str) -> Dict[str, Any]:
         self._ensure_session_loaded(session_id)

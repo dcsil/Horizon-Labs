@@ -33,6 +33,16 @@ class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessage] = Field(default_factory=list, description="Ordered chat transcript")
 
 
+class ChatSessionSummary(BaseModel):
+    session_id: str = Field(..., description="Unique chat session identifier")
+    updated_at: datetime = Field(..., description="When the session was last updated")
+    message_count: int = Field(..., ge=0, description="Number of persisted user/assistant messages")
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: List[ChatSessionSummary] = Field(default_factory=list, description="Available chat sessions")
+
+
 class QuizStreamRequest(BaseModel):
     session_id: str = Field(..., description="Identifier for the chat session")
     topic: str = Field(..., description="Subject area the quiz should cover")

@@ -5,7 +5,9 @@ const $metadata = document.querySelector('#metadata');
 const $message = document.querySelector('#message');
 const $sendBtn = document.querySelector('#send-btn');
 const $resetBtn = document.querySelector('#reset-btn');
+const $historyBtn = document.querySelector('#history-btn');
 const $log = document.querySelector('#stream-log');
+const $historyLog = document.querySelector('#history-log');
 
 const decoder = new TextDecoder('utf-8');
 
@@ -84,6 +86,8 @@ async function sendMessage() {
     if (buffer.trim()) {
       processEvent(buffer.trim());
     }
+
+    await loadHistory();
   } catch (err) {
     appendToLog(`Network error: ${err.message}\n`, { isError: true });
   } finally {
@@ -92,17 +96,21 @@ async function sendMessage() {
   }
 }
 
-function getResetUrl() {
+function buildEndpointUrl(endpoint, queryParams = null) {
   try {
     const url = new URL($backendUrl.value);
     const segments = url.pathname.split('/').filter(Boolean);
     if (segments.length === 0) {
-      segments.push('chat', 'reset');
+      segments.push('chat', endpoint);
     } else {
-      segments[segments.length - 1] = 'reset';
+      segments[segments.length - 1] = endpoint;
     }
     url.pathname = `/${segments.join('/')}`;
     url.search = '';
+    if (queryParams) {
+      const search = new URLSearchParams(queryParams);
+      url.search = search.toString();
+    }
     return url.toString();
   } catch (err) {
     appendToLog(`\nInvalid backend URL: ${err.message}\n`, { isError: true });
@@ -122,7 +130,7 @@ async function resetSession() {
   $log.classList.remove('error');
 
   try {
-    const response = await fetch(getResetUrl(), {
+    const response = await fetch(buildEndpointUrl('reset'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -144,6 +152,37 @@ async function resetSession() {
     appendToLog(`\nReset error: ${err.message}\n`, { isError: true });
   } finally {
     $resetBtn.disabled = false;
+  }
+}
+
+function renderHistory(messages) {
+  if (!messages || messages.length === 0) {
+    $historyLog.textContent = 'No persisted history found for this session.';
+    return;
+  }
+
+  const lines = messages.map((entry) => {
+    const timestamp = new Date(entry.created_at || Date.now()).toLocaleTimeString();
+    const role = entry.role === 'assistant' ? 'AI' : 'User';
+    return `[${timestamp}] ${role}: ${entry.content}`;
+  });
+
+  $historyLog.textContent = lines.join('\n');
+}
+
+async function loadHistory() {
+  const sessionId = ensureSessionId();
+
+  try {
+    const historyUrl = buildEndpointUrl('history', { session_id: sessionId });
+    const response = await fetch(historyUrl);
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    const data = await response.json();
+    renderHistory(data.messages || []);
+  } catch (err) {
+    $historyLog.textContent = `Failed to load history: ${err.message}`;
   }
 }
 
@@ -197,6 +236,11 @@ $sendBtn.addEventListener('click', (event) => {
 $resetBtn.addEventListener('click', (event) => {
   event.preventDefault();
   resetSession();
+});
+
+$historyBtn.addEventListener('click', (event) => {
+  event.preventDefault();
+  loadHistory();
 });
 
 $message.addEventListener('keydown', (event) => {
