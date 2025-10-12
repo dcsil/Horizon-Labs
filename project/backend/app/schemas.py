@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,17 @@ class ChatStreamRequest(BaseModel):
 
 class ChatResetRequest(BaseModel):
     session_id: str = Field(..., description="Identifier for the chat session to clear")
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"] = Field(..., description="Speaker of the message")
+    content: str = Field(..., description="Human-readable message text")
+    created_at: datetime = Field(..., description="Timestamp when the message was recorded")
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str = Field(..., description="Chat session identifier")
+    messages: List[ChatMessage] = Field(default_factory=list, description="Ordered chat transcript")
 
 
 class QuizStreamRequest(BaseModel):

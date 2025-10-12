@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from clients.llm import LLMService, get_llm_service
 from clients.llm.settings import get_settings
 
-from .schemas import ChatResetRequest, ChatStreamRequest, QuizStreamRequest
+from .schemas import ChatHistoryResponse, ChatResetRequest, ChatStreamRequest, QuizStreamRequest
 
 # Set up logging early so LLMService can use it during initialization.
 _TELEMETRY_ENABLED = False
@@ -90,6 +90,16 @@ async def chat_reset(
 ) -> dict[str, str]:
     llm_service.reset_session(request.session_id)
     return {"status": "reset"}
+
+
+@app.get("/chat/history", response_model=ChatHistoryResponse)
+async def chat_history(
+    session_id: str = Query(..., description="Session identifier to fetch"),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> ChatHistoryResponse:
+    """Return persisted chat turns for the requested session."""
+    history = llm_service.get_chat_history(session_id)
+    return ChatHistoryResponse(**history)
 
 
 @app.get("/debug/friction-state")

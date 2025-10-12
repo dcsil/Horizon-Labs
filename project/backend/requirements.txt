@@ -12,3 +12,4 @@ sentence-transformers
 langchain-google-genai
 langchain-core
 beautifulsoup4
+google-cloud-firestore

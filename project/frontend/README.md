@@ -37,6 +37,12 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Chat Persistence
+
+- The chat experience stores the session identifier in `localStorage` (`horizon-chat-session-id`) so reloading the browser restores the same conversation.
+- On load the UI calls `GET /chat/history?session_id=...` to fetch previous turns and display them before opening a new SSE stream.
+- Ensure the backend is running with persistence enabled (Firestore credentials) so history requests succeed.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

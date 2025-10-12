@@ -4,6 +4,14 @@ import { flags } from "../../lib/flag.js";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const STREAM_ENDPOINT = `${API_BASE_URL}/chat/stream`;
+const HISTORY_ENDPOINT = `${API_BASE_URL}/chat/history`;
+const SESSION_STORAGE_KEY = "horizon-chat-session-id";
+
+const createWelcomeMessage = () => ({
+  id: "welcome",
+  role: "system",
+  text: "Welcome to Horizon Labs Chat. Ask a question to begin.",
+});
 
 const createId = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID
@@ -18,19 +26,29 @@ function Banner() {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState([
-    {
-      id: "welcome",
-      role: "system",
-      text: "Welcome to Horizon Labs Chat. Ask a question to begin.",
-    },
-  ]);
+  const [messages, setMessages] = useState([createWelcomeMessage()]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const listRef = useRef(null);
   const abortRef = useRef(null);
   const sessionRef = useRef(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Reuse the same session identifier after page refreshes so the backend can
+    // hydrate prior turns from the database.
+    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const resolved = stored || createId();
+    if (!stored) {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, resolved);
+    }
+    sessionRef.current = resolved;
+    setSessionId(resolved);
+  }, []);
 
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages, isStreaming]);
 
@@ -40,11 +58,58 @@ export default function ChatPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!sessionId || historyLoaded) return;
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      setIsLoadingHistory(true);
+      try {
+        const response = await fetch(`${HISTORY_ENDPOINT}?session_id=${sessionId}`);
+        if (!response.ok) {
+          throw new Error(`Failed to load history (status ${response.status})`);
+        }
+        const payload = await response.json();
+        if (cancelled) return;
+
+        // Normalise the persisted transcript into the shape expected by the UI.
+        const restored = (payload.messages || []).map((msg, index) => ({
+          id: `${msg.role}-${index}-${createId()}`,
+          role: msg.role,
+          text: msg.content ?? "",
+          createdAt: msg.created_at ?? null,
+        }));
+
+        setMessages(restored.length ? [createWelcomeMessage(), ...restored] : [createWelcomeMessage()]);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Unable to load previous messages.";
+        setError(message);
+        setMessages([createWelcomeMessage()]);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingHistory(false);
+          setHistoryLoaded(true);
+        }
+      }
+    };
+
+    loadHistory();
+    return () => { cancelled = true; };
+  }, [sessionId, historyLoaded]);
+
   const ensureSessionId = () => {
-    if (!sessionRef.current) {
-      sessionRef.current = createId();
+    if (sessionRef.current) {
+      return sessionRef.current;
     }
-    return sessionRef.current;
+    const resolved = sessionId || createId();
+    sessionRef.current = resolved;
+    setSessionId(resolved);
+    // Keep localStorage as the single source of truth for session continuity.
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(SESSION_STORAGE_KEY, resolved);
+    }
+    return resolved;
   };
 
   const updateMessage = (id, updater) => {
@@ -57,17 +122,19 @@ export default function ChatPage() {
 
   const handleSend = () => {
     const t = input.trim();
-    if (!t || isStreaming) return;
+    if (!t || isStreaming || isLoadingHistory) return;
 
     const sessionId = ensureSessionId();
     const userId = createId();
     const assistantId = createId();
+    const now = new Date().toISOString();
 
     setError(null);
+    // Optimistically render the user turn and a placeholder assistant bubble while streaming.
     setMessages(m => [
       ...m,
-      { id: userId, role: "user", text: t },
-      { id: assistantId, role: "assistant", text: "" },
+      { id: userId, role: "user", text: t, createdAt: now },
+      { id: assistantId, role: "assistant", text: "", createdAt: now },
     ]);
     setInput("");
     setIsStreaming(true);
@@ -162,6 +229,7 @@ export default function ChatPage() {
       <h1 className="mb-4 text-2xl font-semibold">Hello Chat</h1>
       <Banner />
       <div ref={listRef} className="h-[420px] w-full overflow-y-auto rounded-lg border bg-white p-4">
+        {isLoadingHistory && <div className="mb-2 text-xs text-gray-500">Restoring previous messages…</div>}
         {messages.map(m => (
           <div key={m.id} className={`mb-3 flex ${m.role==="user"?"justify-end":"justify-start"}`}>
             <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm shadow ${
@@ -177,7 +245,7 @@ export default function ChatPage() {
       <div className="mt-4 flex items-center gap-2">
         <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSend()}
           placeholder="Type your message…" className="flex-1 rounded-lg border px-3 py-2" />
-        <button onClick={handleSend} disabled={isStreaming} className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50">Send</button>
+        <button onClick={handleSend} disabled={isStreaming || isLoadingHistory} className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50">Send</button>
       </div>
     </div>
   );

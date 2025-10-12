@@ -65,6 +65,7 @@ Defined in `backend/app/main.py`:
   - Request body: `{ session_id, message, context?, metadata? }`.
   - Response format: `data:` lines with `{ "type": "token", "data": "..." }`, followed by an `event: end` sentinel.
 - `POST /chat/reset` – Clears in-memory history for a given session id.
+- `GET /chat/history` – Returns the persisted transcript for a session so clients can restore the UI after refreshes.
 - `POST /ingest/upload` – Skeleton accepting a file + metadata and returning HTTP 501 until the ingestion pipeline is implemented.
 - `POST /quiz/stream` – SSE scaffold for quiz generation; currently returns an `event: error` noting the feature is pending.
 - `GET /debug/friction-state` – Development helper that returns the adaptive friction counters for a given `session_id`.
@@ -99,4 +100,12 @@ Visit Swagger docs at `http://localhost:8000/docs` for interactive requests. Whe
 - CORS is fully open (`allow_origins="*"`) for ease of local testing; tighten before production use.
 - The SSE streaming response wraps errors in an `event: error` message and always emits `event: end` to let clients clean up.
 - Telemetry logging initialises only when `TELEMETRY_ENABLED=true`; events appear as JSON at INFO level on the `telemetry` logger.
-- No persistence layer is configured yet—consider plugging the session store into Redis or a database if you need durability or multi-worker support.
+- Firestore credentials are required at startup. Ensure `FIREBASE_PROJECT_ID` is set and `GOOGLE_APPLICATION_CREDENTIALS` points to a valid service account.
+
+## Chat Persistence
+
+- Provide a Firebase project (`FIREBASE_PROJECT_ID`) and service account credentials (`GOOGLE_APPLICATION_CREDENTIALS`) so the backend can write to Cloud Firestore.
+- Each chat session is stored under the `chat_sessions` collection with the following document shape:
+  - `messages`: ordered array of `{ role, content, display_content, created_at }` records.
+  - `friction_progress`, `session_mode`, `last_prompt`: friction state needed for continuum gating.
+- Missing or invalid credentials will cause the API to fail fast so configuration issues can be resolved immediately.
