@@ -34,6 +34,7 @@ class LLMService:
         self._session_modes: DefaultDict[str, str] = defaultdict(lambda: "friction")
         self._last_prompts: DefaultDict[str, str] = defaultdict(lambda: "friction")
         self._friction_progress: DefaultDict[str, int] = defaultdict(int)
+        self._guidance_ready: DefaultDict[str, bool] = defaultdict(bool)
         self._last_classifications: Dict[str, ClassificationResult] = {}
         self._friction_threshold = settings.friction_attempts_required
         self._friction_min_words = settings.friction_min_words
@@ -48,6 +49,7 @@ class LLMService:
         question: str,
         context: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        use_guidance: bool = False,
     ) -> AsyncGenerator[str, None]:
         llm = ChatOpenAI(
             model=self._settings.model_name,
@@ -70,25 +72,37 @@ class LLMService:
         current_mode = self._session_modes[session_id]
         progress_before = self._friction_progress[session_id]
         friction_attempts = progress_before
-        guidance_for_turn = False
-
+        guidance_ready = self._guidance_ready[session_id]
         qualifies_by_length = word_count >= self._friction_min_words
         qualifies_by_label = classification.label == "good"
         qualifies_for_progress = qualifies_by_label or qualifies_by_length
-
-        if current_mode == "friction":
-            if qualifies_for_progress:
-                friction_attempts = progress_before + 1
-                if friction_attempts >= self._friction_threshold:
-                    guidance_for_turn = True
-                    self._friction_progress[session_id] = 0
-                    self._session_modes[session_id] = "guidance"
-                else:
+        if current_mode != "guidance":
+            if not guidance_ready:
+                if qualifies_for_progress:
+                    friction_attempts = min(progress_before + 1, self._friction_threshold)
                     self._friction_progress[session_id] = friction_attempts
+                    if friction_attempts >= self._friction_threshold:
+                        self._guidance_ready[session_id] = True
+                        guidance_ready = True
+                else:
+                    friction_attempts = progress_before
             else:
                 friction_attempts = progress_before
         else:
+            guidance_ready = True
+
+        guidance_for_turn = False
+        attempts_for_event = self._friction_progress[session_id]
+        if use_guidance and guidance_ready:
             guidance_for_turn = True
+            attempts_for_event = max(attempts_for_event, friction_attempts, progress_before)
+            self._guidance_ready[session_id] = False
+            self._friction_progress[session_id] = 0
+            friction_attempts = 0
+        elif use_guidance and not guidance_ready:
+            logger.info("Guidance requested for session %s but not yet unlocked; staying in friction mode", session_id)
+        else:
+            attempts_for_event = self._friction_progress[session_id]
 
         prompt_key = "guidance" if guidance_for_turn else "friction"
         self._session_modes[session_id] = prompt_key
@@ -161,7 +175,7 @@ class LLMService:
             total_tokens=int(usage["total_tokens"]),
             total_cost=usage["total_cost"] or None,
             guidance_used=guidance_for_turn or None,
-            friction_attempts=friction_attempts if not guidance_for_turn else self._friction_threshold,
+            friction_attempts=attempts_for_event,
             friction_threshold=self._friction_threshold,
             turn_classification=classification.label,
             classification_source="model" if classification.used_model else "heuristic",
@@ -221,6 +235,7 @@ class LLMService:
             self._friction_progress.pop(session_id, None)
             self._session_modes.pop(session_id, None)
             self._last_prompts.pop(session_id, None)
+            self._guidance_ready.pop(session_id, None)
             self._last_classifications.pop(session_id, None)
         else:
             self._hydrate_session_from_record(record)
@@ -254,6 +269,7 @@ class LLMService:
         self._friction_progress[record.session_id] = record.friction_progress
         self._session_modes[record.session_id] = record.session_mode or "friction"
         self._last_prompts[record.session_id] = record.last_prompt or "friction"
+        self._guidance_ready[record.session_id] = record.guidance_ready
         last_classification: Optional[ClassificationResult] = None
         for message in reversed(session_messages):
             if isinstance(message, HumanMessage):
@@ -299,6 +315,7 @@ class LLMService:
             friction_progress=self._friction_progress.get(session_id, 0),
             session_mode=self._session_modes.get(session_id, "friction"),
             last_prompt=self._last_prompts.get(session_id, "friction"),
+            guidance_ready=self._guidance_ready.get(session_id, False),
         )
 
     def _convert_message_to_record(
@@ -397,16 +414,16 @@ class LLMService:
         self._session_modes.pop(session_id, None)
         self._last_prompts.pop(session_id, None)
         self._friction_progress.pop(session_id, None)
+        self._guidance_ready.pop(session_id, None)
         self._last_classifications.pop(session_id, None)
 
     def get_session_state(self, session_id: str) -> Dict[str, Any]:
         self._ensure_session_loaded(session_id)
         progress = self._friction_progress.get(session_id, 0)
         threshold = self._friction_threshold
-        remaining = max(threshold - progress, 0)
-        next_prompt = "guidance" if remaining <= 1 else "friction"
-        if self._session_modes.get(session_id) == "guidance":
-            next_prompt = "guidance"
+        guidance_ready = self._guidance_ready.get(session_id, False)
+        remaining = 0 if guidance_ready else max(threshold - progress, 0)
+        next_prompt = "guidance" if self._session_modes.get(session_id) == "guidance" else "friction"
         classification = self._last_classifications.get(session_id)
         classification_source = None
         if classification is not None:
@@ -416,7 +433,8 @@ class LLMService:
             "last_prompt": self._last_prompts.get(session_id, "friction"),
             "friction_attempts": progress,
             "friction_threshold": threshold,
-            "responses_needed": remaining if remaining > 0 else 0,
+            "responses_needed": remaining,
+            "guidance_ready": guidance_ready,
             "min_words": self._friction_min_words,
             "classification_label": classification.label if classification else None,
             "classification_rationale": classification.rationale if classification else None,
@@ -432,13 +450,14 @@ class LLMService:
             "friction": SystemMessage(
                 "You are Horizon Labs' learning coach. NEVER answer questions directly; " \
                 "NEVER give direct solutions; even if you've previously provided direct answers, " \
-                "instead craft hints, Socratic prompts, and step-by-step guidance" \
-                " that help learners discover the answer themselves."
+                "instead craft hints, Socratic prompts, and step-by-step guidance " \
+                "that help learners discover the answer themselves."
             ),
             "guidance": SystemMessage(
-                "You are Horizon Labs' learning coach. Provide clear, direct explanations that build on"
-                " the learner's (HumanMessage) prior reasoning while confirming key concepts. If the learner is stuck," \
-                " offer a direct answer with context and examples."
+                "You are Horizon Labs' learning coach. Provide clear, direct explanations that build on "
+                "the learner's (HumanMessage) prior reasoning while confirming key concepts. If the learner is stuck, " \
+                "offer a direct answer with context and examples (ONLY ON PREVIOUSLY DISCUSSED TOPICS). " \
+                "At the end, suggest 2 to 3 follow-ups to deepen understanding."
             ),
             "quiz": SystemMessage(
                 "You are Horizon Labs' learning coach. Create quizzes that assess understanding."

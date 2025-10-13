@@ -71,6 +71,7 @@ async def chat_stream(
                 question=request.message,
                 context=request.context,
                 metadata=request.metadata,
+                use_guidance=request.use_guidance,
             ):
                 payload = json.dumps({"type": "token", "data": chunk})
                 yield f"data: {payload}\n\n"

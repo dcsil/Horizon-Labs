@@ -24,6 +24,12 @@ const $stateClassificationSource = document.querySelector('#state-classification
 const $stateClassificationRationale = document.querySelector('#state-classification-rationale');
 const $stateClassificationLLM = document.querySelector('#state-classification-llm');
 const $stateClassificationRaw = document.querySelector('#state-classification-raw');
+const $useGuidanceToggle = document.querySelector('#use-guidance');
+const $guidanceStatus = document.querySelector('#guidance-status');
+const $stateGuidanceReady = document.querySelector('#state-guidance-ready');
+
+const GUIDANCE_LOCKED_TEXT = 'Guidance unlocks after you meet the attempt threshold.';
+const GUIDANCE_READY_TEXT = 'Guidance unlocked — check the box to receive direct guidance.';
 
 const decoder = new TextDecoder('utf-8');
 let abortController = null;
@@ -236,6 +242,10 @@ function renderState(data) {
     $stateRemaining.textContent = '--';
     $stateMinWords.textContent = '--';
     resetClassificationDisplay();
+    $stateGuidanceReady.textContent = '--';
+    $useGuidanceToggle.checked = false;
+    $useGuidanceToggle.disabled = true;
+    $guidanceStatus.textContent = GUIDANCE_LOCKED_TEXT;
     return;
   }
 
@@ -244,6 +254,7 @@ function renderState(data) {
   const attempts = Number(data.friction_attempts ?? 0);
   const threshold = Number(data.friction_threshold ?? 0);
   const remaining = Number(data.responses_needed ?? Math.max(threshold - attempts, 0));
+  const guidanceReady = Boolean(data.guidance_ready);
   const label = data.classification_label || '--';
   const sourceRaw = data.classification_source || '';
   const rationale = data.classification_rationale && data.classification_rationale.trim().length > 0
@@ -260,11 +271,21 @@ function renderState(data) {
   $stateThreshold.textContent = threshold;
   $stateRemaining.textContent = remaining;
   $stateMinWords.textContent = data.min_words ?? '--';
+  $stateGuidanceReady.textContent = guidanceReady ? 'Yes' : 'No';
   $stateClassificationLabel.textContent = label;
   $stateClassificationSource.textContent = sourceDisplay;
   $stateClassificationLLM.textContent = llmUsage;
   $stateClassificationRationale.textContent = rationale ?? '--';
   $stateClassificationRaw.textContent = rawOutputDisplay;
+
+  if (guidanceReady) {
+    $useGuidanceToggle.disabled = false;
+    $guidanceStatus.textContent = GUIDANCE_READY_TEXT;
+  } else {
+    $useGuidanceToggle.checked = false;
+    $useGuidanceToggle.disabled = true;
+    $guidanceStatus.textContent = GUIDANCE_LOCKED_TEXT;
+  }
 }
 
 async function loadHistory() {
@@ -322,6 +343,8 @@ async function sendMessage() {
     return;
   }
 
+  const useGuidance = Boolean($useGuidanceToggle.checked && !$useGuidanceToggle.disabled);
+
   $log.textContent = '';
   $log.classList.remove('error');
   $sendBtn.disabled = true;
@@ -336,7 +359,11 @@ async function sendMessage() {
     const response = await fetch(`${base}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, message: input }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        message: input,
+        use_guidance: useGuidance,
+      }),
       signal: abortController.signal,
     });
 
@@ -413,6 +440,9 @@ async function sendMessage() {
     $resetBtn.disabled = false;
     $refreshBtn.disabled = false;
     $historyBtn.disabled = false;
+    if (!$useGuidanceToggle.disabled) {
+      $useGuidanceToggle.checked = false;
+    }
   }
 }
 

@@ -72,6 +72,7 @@ class ChatSessionRecord:
     friction_progress: int
     session_mode: str
     last_prompt: str
+    guidance_ready: bool = False
 
     def to_dict(self) -> Dict[str, object]:
         payload = {
@@ -80,6 +81,7 @@ class ChatSessionRecord:
             "friction_progress": self.friction_progress,
             "session_mode": self.session_mode,
             "last_prompt": self.last_prompt,
+            "guidance_ready": self.guidance_ready,
         }
         payload["updated_at"] = _firestore_timestamp()
         return payload
@@ -98,6 +100,7 @@ class ChatSessionRecord:
             friction_progress=int(payload.get("friction_progress", 0)),
             session_mode=str(payload.get("session_mode", "friction")),
             last_prompt=str(payload.get("last_prompt", "friction")),
+            guidance_ready=bool(payload.get("guidance_ready", False)),
         )
 
 

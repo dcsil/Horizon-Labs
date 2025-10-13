@@ -16,6 +16,10 @@ class ChatStreamRequest(BaseModel):
         default=None,
         description="Arbitrary key-value pairs forwarded to the prompt",
     )
+    use_guidance: bool = Field(
+        default=False,
+        description="When true, request the guidance prompt for this turn (if unlocked)",
+    )
 
 
 class ChatResetRequest(BaseModel):

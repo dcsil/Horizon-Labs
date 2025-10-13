@@ -6,6 +6,7 @@ import { flags } from "../../lib/flag.js";
 const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const STREAM_ENDPOINT = `${API_BASE_URL}/chat/stream`;
 const HISTORY_ENDPOINT = `${API_BASE_URL}/chat/history`;
+const STATE_ENDPOINT = `${API_BASE_URL}/debug/friction-state`;
 
 const SESSION_LIST_STORAGE_KEY = "horizon-chat-sessions";
 const LAST_SESSION_STORAGE_KEY = "horizon-chat-last-session";
@@ -41,6 +42,22 @@ export default function ChatPage() {
   const [isClassifying, setIsClassifying] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState(null);
+  const [guidanceReady, setGuidanceReady] = useState(false);
+  const [guidanceModalOpen, setGuidanceModalOpen] = useState(false);
+  const [guidanceToggle, setGuidanceToggle] = useState(false);
+
+  const applyGuidanceState = useCallback((ready) => {
+    setGuidanceReady((prev) => {
+      if (!prev && ready) {
+        setGuidanceModalOpen(true);
+      }
+      return ready;
+    });
+    if (!ready) {
+      setGuidanceToggle(false);
+      setGuidanceModalOpen(false);
+    }
+  }, []);
 
   const listRef = useRef(null);
   const abortRef = useRef(null);
@@ -154,6 +171,15 @@ export default function ChatPage() {
     return { messages: restored, latestTimestamp: latest };
   }, []);
 
+  const fetchSessionState = useCallback(async (sessionId) => {
+    const url = `${STATE_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch session state (status ${response.status})`);
+    }
+    return response.json();
+  }, []);
+
   useEffect(() => {
     if (!activeSessionId) return;
     sessionRef.current = activeSessionId;
@@ -164,12 +190,22 @@ export default function ChatPage() {
     setIsLoadingHistory(true);
     setError(null);
 
-    fetchHistory(activeSessionId)
-      .then(({ messages: restored, latestTimestamp }) => {
+    (async () => {
+      try {
+        const [historyPayload, statePayload] = await Promise.all([
+          fetchHistory(activeSessionId),
+          fetchSessionState(activeSessionId).catch(() => null),
+        ]);
         if (cancelled) return;
+
+        const { messages: restored, latestTimestamp } = historyPayload;
         setMessages(
           restored.length ? [createWelcomeMessage(), ...restored] : [createWelcomeMessage()]
         );
+
+        const ready = Boolean(statePayload && statePayload.guidance_ready);
+        applyGuidanceState(ready);
+
         persistSessions((prev) =>
           prev.map((session, index) =>
             session.id === activeSessionId
@@ -181,23 +217,23 @@ export default function ChatPage() {
               : session
           )
         );
-      })
-      .catch((err) => {
+      } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : "Unable to load previous messages.";
         setError(message);
         setMessages([createWelcomeMessage()]);
-      })
-      .finally(() => {
+        applyGuidanceState(false);
+      } finally {
         if (!cancelled) {
           setIsLoadingHistory(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, fetchHistory, persistSessions]);
+  }, [activeSessionId, applyGuidanceState, fetchHistory, fetchSessionState, persistSessions]);
 
   const handleCreateSession = () => {
     const now = new Date().toISOString();
@@ -222,6 +258,7 @@ export default function ChatPage() {
     setMessages([createWelcomeMessage()]);
     setError(null);
     setIsStreaming(false);
+    applyGuidanceState(false);
     if (typeof window !== "undefined") {
       window.localStorage.setItem(LAST_SESSION_STORAGE_KEY, id);
     }
@@ -236,6 +273,7 @@ export default function ChatPage() {
     sessionRef.current = id;
     setMessages([createWelcomeMessage()]);
     setError(null);
+    applyGuidanceState(false);
     setActiveSessionId(id);
   };
 
@@ -280,6 +318,7 @@ export default function ChatPage() {
     const assistantId = createId();
     const now = new Date().toISOString();
     let encounteredError = false;
+    const useGuidanceNow = guidanceReady && guidanceToggle;
 
     setError(null);
     setMessages((prev) => [
@@ -357,6 +396,7 @@ export default function ChatPage() {
           body: JSON.stringify({
             session_id: currentSession,
             message: trimmed,
+            use_guidance: useGuidanceNow,
           }),
           signal: controller.signal,
         });
@@ -367,7 +407,10 @@ export default function ChatPage() {
 
         await readStream(response);
         if (!encounteredError) {
-          const history = await fetchHistory(currentSession);
+          const [history, statePayload] = await Promise.all([
+            fetchHistory(currentSession),
+            fetchSessionState(currentSession).catch(() => null),
+          ]);
           setMessages(
             history.messages.length
               ? [createWelcomeMessage(), ...history.messages]
@@ -385,6 +428,8 @@ export default function ChatPage() {
             )
           );
           setIsClassifying(false);
+          const ready = Boolean(statePayload && statePayload.guidance_ready);
+          applyGuidanceState(ready);
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -393,10 +438,17 @@ export default function ChatPage() {
           setError(message);
         }
         setIsClassifying(false);
+        if (useGuidanceNow) {
+          applyGuidanceState(false);
+        }
       } finally {
         setIsStreaming(false);
         setIsClassifying(false);
         abortRef.current = null;
+        if (useGuidanceNow) {
+          setGuidanceToggle(false);
+          setGuidanceModalOpen(false);
+        }
       }
     })();
   };
@@ -495,6 +547,43 @@ export default function ChatPage() {
           {isStreaming && <div className="animate-pulse text-xs text-gray-500">streaming…</div>}
         </div>
         {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+        {guidanceReady && (
+          <div className="mt-4">
+            {guidanceModalOpen ? (
+              <div className="relative rounded-lg border border-blue-200 bg-blue-50 p-4 shadow">
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 text-sm text-blue-500 hover:text-blue-700"
+                  onClick={() => setGuidanceModalOpen(false)}
+                  aria-label="Dismiss guidance prompt"
+                >
+                  ×
+                </button>
+                <h3 className="text-sm font-semibold text-blue-900">Guidance mode unlocked</h3>
+                <p className="mt-1 text-xs text-blue-800">
+                  Toggle to let Horizon Labs provide direct guidance on the next response. The toggle
+                  resets after one turn so you can stay in friction mode when you prefer.
+                </p>
+                <label className="mt-3 flex items-center gap-2 text-sm text-blue-900">
+                  <input
+                    type="checkbox"
+                    checked={guidanceToggle}
+                    onChange={(event) => setGuidanceToggle(event.target.checked)}
+                  />
+                  Use guidance on the next response
+                </label>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setGuidanceModalOpen(true)}
+                className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 hover:border-blue-300"
+              >
+                Guidance ready — click to configure
+              </button>
+            )}
+          </div>
+        )}
         <div className="mt-4 flex items-center gap-2">
           <input
             value={input}
@@ -505,7 +594,7 @@ export default function ChatPage() {
           />
           <button
             onClick={handleSend}
-          disabled={isStreaming || isLoadingHistory || isClassifying}
+            disabled={isStreaming || isLoadingHistory || isClassifying}
             className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
           >
             Send

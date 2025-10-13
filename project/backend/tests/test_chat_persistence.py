@@ -66,6 +66,7 @@ def test_inmemory_repository_roundtrip():
         friction_progress=2,
         session_mode="guidance",
         last_prompt="guidance",
+        guidance_ready=False,
     )
 
     repo.save_session(record)
@@ -76,6 +77,7 @@ def test_inmemory_repository_roundtrip():
     assert loaded.friction_progress == 2
     assert loaded.session_mode == "guidance"
     assert loaded.messages[0].display_content == "stored content"
+    assert loaded.guidance_ready is False
 
 
 @pytest.mark.asyncio

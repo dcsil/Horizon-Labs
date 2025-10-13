@@ -48,6 +48,14 @@
           <small id="word-count">Word count: 0</small>
         </div>
 
+        <div class="field inline-toggle">
+          <label class="checkbox">
+            <input type="checkbox" id="use-guidance" disabled />
+            <span>Use guidance for the next response</span>
+          </label>
+          <small id="guidance-status">Guidance unlocks after you meet the attempt threshold.</small>
+        </div>
+
         <div class="actions">
           <button id="send-btn">Send &amp; Stream</button>
           <button id="reset-btn" class="secondary">Reset Session</button>
@@ -70,6 +78,7 @@
           <span id="state-remaining">--</span>
         </p>
         <p><strong>Minimum words per attempt:</strong> <span id="state-min-words">--</span></p>
+        <p><strong>Guidance ready:</strong> <span id="state-guidance-ready">--</span></p>
 
         <div class="classification-section">
           <h3>Last Classification</h3>
