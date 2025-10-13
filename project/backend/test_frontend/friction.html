@@ -64,6 +64,11 @@
         </div>
       </section>
 
+      <div id="microcheck-banner" class="microcheck-banner hidden" role="status">
+        <span>Microcheck pending. Complete it to continue chatting.</span>
+        <button id="microcheck-open" class="linklike">Resume Microcheck</button>
+      </div>
+
       <section class="output">
         <h2>Session State</h2>
         <p><strong>Next prompt:</strong> <span id="state-next-prompt">--</span></p>
@@ -79,6 +84,15 @@
         </p>
         <p><strong>Minimum words per attempt:</strong> <span id="state-min-words">--</span></p>
         <p><strong>Guidance ready:</strong> <span id="state-guidance-ready">--</span></p>
+        <p><strong>Microcheck pending:</strong> <span id="state-microcheck-pending">--</span></p>
+        <p><strong>Turns until microcheck:</strong> <span id="state-microcheck-remaining">--</span></p>
+
+        <div class="topic-section">
+          <h3>Topics</h3>
+          <ul id="state-topics-list" class="topic-list">
+            <li class="placeholder">No topics detected yet.</li>
+          </ul>
+        </div>
 
         <div class="classification-section">
           <h3>Last Classification</h3>
@@ -101,6 +115,25 @@
         <pre id="history-log" class="history-log">No history loaded yet.</pre>
       </section>
     </main>
+
+    <div id="microcheck-banner" class="microcheck-banner hidden" role="status">
+      <span>Microcheck pending. Complete it to continue chatting.</span>
+      <button id="microcheck-open" class="linklike">Resume Microcheck</button>
+    </div>
+
+    <div id="microcheck-overlay" class="microcheck-overlay hidden" role="dialog" aria-modal="true">
+      <div class="microcheck-modal">
+        <button id="microcheck-close" class="microcheck-close" aria-label="Close microcheck">&times;</button>
+        <h3>Microcheck</h3>
+        <p id="microcheck-subtitle">Answer the prompts below to unlock the chat.</p>
+        <form id="microcheck-form" class="microcheck-form"></form>
+        <div id="microcheck-feedback" class="microcheck-feedback hidden"></div>
+        <div class="microcheck-actions">
+          <button id="microcheck-submit" type="button">Submit Answers</button>
+          <button id="microcheck-later" type="button" class="secondary">Do It Later</button>
+        </div>
+      </div>
+    </div>
 
     <script src="friction.js"></script>
   </body>

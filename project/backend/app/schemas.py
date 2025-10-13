@@ -38,6 +38,8 @@ class ChatMessage(BaseModel):
         default=None,
         description="Brief justification for the assigned turn classification",
     )
+    topic_id: Optional[str] = Field(default=None, description="Identifier for the topic assigned to the turn")
+    topic_name: Optional[str] = Field(default=None, description="Human readable topic label")
 
 
 class ChatHistoryResponse(BaseModel):
@@ -53,6 +55,58 @@ class ChatSessionSummary(BaseModel):
 
 class ChatSessionListResponse(BaseModel):
     sessions: List[ChatSessionSummary] = Field(default_factory=list, description="Available chat sessions")
+
+
+class MicrocheckOption(BaseModel):
+    id: str = Field(..., description="Unique identifier for the answer option")
+    text: str = Field(..., description="Display text for the option")
+
+
+class MicrocheckQuestion(BaseModel):
+    question_id: str = Field(..., description="Question identifier")
+    prompt: str = Field(..., description="Microcheck question prompt")
+    topic_id: Optional[str] = Field(default=None, description="Topic identifier linked to the question")
+    topic_name: Optional[str] = Field(default=None, description="Topic label linked to the question")
+    options: List[MicrocheckOption] = Field(default_factory=list, description="Available answer options")
+
+
+class PendingMicrocheckResponse(BaseModel):
+    microcheck_id: str = Field(..., description="Identifier for the pending microcheck")
+    created_at: datetime = Field(..., description="ISO timestamp when the microcheck was generated")
+    questions: List[MicrocheckQuestion] = Field(..., description="Questions to complete")
+
+
+class MicrocheckSubmitAnswer(BaseModel):
+    question_id: str = Field(..., description="Question identifier")
+    selected_option_id: str = Field(..., description="Option chosen by the learner")
+
+
+class MicrocheckSubmitRequest(BaseModel):
+    session_id: str = Field(..., description="Session that owns the microcheck")
+    microcheck_id: str = Field(..., description="Identifier of the microcheck being submitted")
+    answers: List[MicrocheckSubmitAnswer] = Field(..., description="Answers keyed by question id")
+
+
+class MicrocheckResultDetail(BaseModel):
+    question_id: str = Field(..., description="Question identifier")
+    selected_option_id: str = Field(..., description="Learner's selected option")
+    correct: bool = Field(..., description="Whether the learner answered correctly")
+    topic_id: Optional[str] = Field(default=None, description="Topic identifier for the question")
+    topic_name: Optional[str] = Field(default=None, description="Topic label for the question")
+
+
+class MicrocheckMasteryUpdate(BaseModel):
+    topic_id: str = Field(..., description="Topic identifier")
+    topic_name: str = Field(..., description="Topic label")
+    mastery: float = Field(..., ge=0.0, le=1.0, description="Updated mastery score in [0,1]")
+    correct: bool = Field(..., description="Whether the learner answered correctly for this topic")
+
+
+class MicrocheckSubmitResponse(BaseModel):
+    microcheck_id: str = Field(..., description="Identifier of the graded microcheck")
+    feedback: str = Field(..., description="General feedback message for the learner")
+    results: List[MicrocheckResultDetail] = Field(..., description="Per-question grading details")
+    mastery_updates: List[MicrocheckMasteryUpdate] = Field(default_factory=list, description="Topic mastery adjustments")
 
 
 class QuizStreamRequest(BaseModel):

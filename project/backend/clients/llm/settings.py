@@ -61,6 +61,26 @@ class Settings(BaseModel):
         le=120,
         description="Timeout for classifier model calls",
     )
+    microcheck_enabled: bool = Field(
+        default=True,
+        description="Enable periodic microchecks for spaced retrieval",
+    )
+    microcheck_question_count: int = Field(
+        default=2,
+        ge=1,
+        le=10,
+        description="Number of questions per microcheck prompt",
+    )
+    microcheck_frequency_turns: int = Field(
+        default=3,
+        ge=1,
+        description="Turns between microchecks when the learner is active",
+    )
+    microcheck_return_minutes: int = Field(
+        default=30,
+        ge=0,
+        description="Minutes of inactivity before a microcheck is required on return (0 disables)",
+    )
 
 
 @lru_cache
@@ -85,4 +105,8 @@ def get_settings() -> Settings:
         turn_classifier_model=os.environ.get("TURN_CLASSIFIER_MODEL", "google/gemini-2.0-flash-exp:free"),
         turn_classifier_temperature=float(os.environ.get("TURN_CLASSIFIER_TEMPERATURE", "0.0")),
         turn_classifier_timeout_seconds=int(os.environ.get("TURN_CLASSIFIER_TIMEOUT_SECONDS", "20")),
+        microcheck_enabled=os.environ.get("MICROCHECK_ENABLED", "true").lower() == "true",
+        microcheck_question_count=int(os.environ.get("MICROCHECK_QUESTION_COUNT", "2")),
+        microcheck_frequency_turns=int(os.environ.get("MICROCHECK_FREQUENCY_TURNS", "3")),
+        microcheck_return_minutes=int(os.environ.get("MICROCHECK_RETURN_MINUTES", "30")),
     )

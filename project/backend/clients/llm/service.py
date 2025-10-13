@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
 import time
-from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional
+import re
+from uuid import uuid4
+from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional, Set
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -13,6 +15,11 @@ from ..database.chat_repository import (
     ChatMessageRecord,
     ChatRepository,
     ChatSessionRecord,
+    TopicRecord,
+    PendingMicrocheckRecord,
+    MicrocheckAttemptRecord,
+    MicrocheckQuestionRecord,
+    MicrocheckResultRecord,
     FirestoreChatRepository,
     InMemoryChatRepository,
     ChatSessionSummary,
@@ -22,6 +29,10 @@ from .settings import Settings, get_settings
 from .telemetry import TelemetryEvent, TelemetryLogger
 
 logger = logging.getLogger(__name__)
+
+
+class PendingMicrocheckError(RuntimeError):
+    """Raised when a session has a pending microcheck that blocks chat activity."""
 
 
 class LLMService:
@@ -38,6 +49,16 @@ class LLMService:
         self._last_classifications: Dict[str, ClassificationResult] = {}
         self._friction_threshold = settings.friction_attempts_required
         self._friction_min_words = settings.friction_min_words
+        self._topics: Dict[str, Dict[str, TopicRecord]] = defaultdict(dict)
+        self._pending_microchecks: Dict[str, PendingMicrocheckRecord] = {}
+        self._microcheck_history: Dict[str, List[MicrocheckAttemptRecord]] = defaultdict(list)
+        self._turns_since_microcheck: DefaultDict[str, int] = defaultdict(int)
+        self._last_activity: Dict[str, datetime] = {}
+        self._topic_examples: Dict[str, Dict[str, List[str]]] = defaultdict(lambda: defaultdict(list))
+        self._microcheck_enabled = settings.microcheck_enabled
+        self._microcheck_question_count = max(1, settings.microcheck_question_count)
+        self._microcheck_frequency = max(1, settings.microcheck_frequency_turns)
+        self._microcheck_return_timeout = max(0, settings.microcheck_return_minutes)
         self._telemetry = TelemetryLogger(settings)
         self._repository: ChatRepository = repository or self._select_repository()
         self._classifier = TurnClassifier(settings)
@@ -60,6 +81,10 @@ class LLMService:
         )
 
         self._ensure_session_loaded(session_id)
+        if self._microcheck_enabled:
+            self._refresh_idle_microcheck_state(session_id)
+            if self._pending_microchecks.get(session_id):
+                raise PendingMicrocheckError("Complete the pending microcheck before continuing the chat.")
         session_history = self._conversations[session_id]
 
         classification = await self._classify_turn(
@@ -67,6 +92,9 @@ class LLMService:
             learner_text=question,
             session_history=session_history,
         )
+
+        topic = self._assign_topic(session_id, question)
+        topic_id = topic.topic_id
 
         word_count = self._count_words(question)
         current_mode = self._session_modes[session_id]
@@ -120,6 +148,8 @@ class LLMService:
                 "classification_rationale": classification.rationale,
                 "classification_source": "model" if classification.used_model else "heuristic",
                 "classification_raw": classification.raw_output,
+                "topic_id": topic_id,
+                "topic_name": topic.name,
             },
         )
         messages: List[SystemMessage | HumanMessage | AIMessage] = [
@@ -155,6 +185,9 @@ class LLMService:
             "display_text": response_text,
         }
         session_history.append(AIMessage(content=response_text, additional_kwargs=assistant_metadata))
+        if self._microcheck_enabled:
+            self._handle_microcheck_after_turn(session_id, topic_id=topic_id)
+        self._last_activity[session_id] = datetime.now(timezone.utc)
         self._persist_session(session_id)
 
         if guidance_for_turn:
@@ -217,6 +250,256 @@ class LLMService:
         self._last_classifications[session_id] = result
         return result
 
+    @staticmethod
+    def _tokenize_topic_text(text: str) -> List[str]:
+        tokens = re.findall(r"[a-z0-9]+", text.lower())
+        filtered = [token for token in tokens if len(token) > 2]
+        return filtered or ["general"]
+
+    @staticmethod
+    def _generate_topic_name(tokens: List[str], index: int) -> str:
+        if tokens:
+            return " ".join(token.capitalize() for token in tokens[:3])
+        return f"Topic {index}"
+
+    def _assign_topic(self, session_id: str, learner_text: str) -> TopicRecord:
+        tokens = self._tokenize_topic_text(learner_text)
+        token_set: Set[str] = set(tokens)
+
+        topics = self._topics[session_id]
+        best_topic: Optional[TopicRecord] = None
+        best_overlap = 0
+        for topic in topics.values():
+            topic_keywords = set(topic.keywords)
+            overlap = len(topic_keywords & token_set)
+            if overlap > best_overlap:
+                best_topic = topic
+                best_overlap = overlap
+
+        if best_topic and best_overlap > 0:
+            merged_keywords = list(dict.fromkeys([*best_topic.keywords, *tokens]))[:10]
+            updated_topic = TopicRecord(
+                topic_id=best_topic.topic_id,
+                name=best_topic.name,
+                keywords=merged_keywords,
+                message_count=best_topic.message_count + 1,
+                mastery=best_topic.mastery,
+            )
+            topics[updated_topic.topic_id] = updated_topic
+            topic_record = updated_topic
+        else:
+            topic_id = f"topic-{uuid4().hex[:8]}"
+            name = self._generate_topic_name(tokens, len(topics) + 1)
+            topic_record = TopicRecord(
+                topic_id=topic_id,
+                name=name,
+                keywords=tokens[:5],
+                message_count=1,
+                mastery=0.5,
+            )
+            topics[topic_id] = topic_record
+
+        snippet = learner_text.strip()
+        if snippet:
+            snippet = snippet[:160]
+            examples = self._topic_examples[session_id][topic_record.topic_id]
+            examples.append(snippet)
+            if len(examples) > 5:
+                self._topic_examples[session_id][topic_record.topic_id] = examples[-5:]
+
+        return topic_record
+
+    def _refresh_idle_microcheck_state(self, session_id: str) -> None:
+        if not self._microcheck_enabled or self._microcheck_return_timeout <= 0:
+            return
+        if self._pending_microchecks.get(session_id):
+            return
+        last_activity = self._last_activity.get(session_id)
+        if last_activity is None:
+            last_activity = self._infer_last_activity(session_id)
+        if last_activity is None:
+            return
+        idle_duration = datetime.now(timezone.utc) - last_activity
+        if idle_duration >= timedelta(minutes=self._microcheck_return_timeout):
+            self._create_microcheck(session_id)
+
+    def _infer_last_activity(self, session_id: str) -> Optional[datetime]:
+        history = self._conversations.get(session_id, [])
+        for message in reversed(history):
+            if isinstance(message, HumanMessage):
+                raw_ts = message.additional_kwargs.get("created_at") if hasattr(message, "additional_kwargs") else None
+                if isinstance(raw_ts, str):
+                    try:
+                        return datetime.fromisoformat(raw_ts)
+                    except ValueError:
+                        continue
+        return None
+
+    def _handle_microcheck_after_turn(self, session_id: str, *, topic_id: str) -> None:
+        if not self._microcheck_enabled:
+            return
+        if self._pending_microchecks.get(session_id):
+            return
+        self._turns_since_microcheck[session_id] += 1
+        if self._turns_since_microcheck[session_id] >= self._microcheck_frequency:
+            self._create_microcheck(session_id)
+
+    def _create_microcheck(self, session_id: str) -> None:
+        topics = list(self._topics[session_id].values())
+        if not topics:
+            default_topic = TopicRecord(
+                topic_id=f"topic-{uuid4().hex[:8]}",
+                name="General Reflection",
+                keywords=["general"],
+                message_count=1,
+                mastery=0.5,
+            )
+            self._topics[session_id][default_topic.topic_id] = default_topic
+            topics = [default_topic]
+
+        topics_sorted = sorted(topics, key=lambda item: item.message_count, reverse=True)
+        selected_topics = topics_sorted[: self._microcheck_question_count]
+        microcheck_id = f"mc-{uuid4().hex[:8]}"
+        questions: List[MicrocheckQuestionRecord] = []
+        for index, topic in enumerate(selected_topics, start=1):
+            question_id = f"{microcheck_id}-q{index}"
+            prompt = f"What is the best next action to strengthen your understanding of {topic.name}?"
+            options = [
+                {"id": "A", "text": f"Summarize {topic.name} in your own words and check it with the coach."},
+                {"id": "B", "text": f"Skip {topic.name} and move on to an unrelated subject."},
+                {"id": "C", "text": "Avoid reviewing and hope it resolves itself."},
+            ]
+            questions.append(
+                MicrocheckQuestionRecord(
+                    question_id=question_id,
+                    prompt=prompt,
+                    options=options,
+                    correct_option_id="A",
+                    topic_id=topic.topic_id,
+                )
+            )
+
+        pending = PendingMicrocheckRecord(
+            microcheck_id=microcheck_id,
+            created_at=datetime.now(timezone.utc),
+            questions=questions,
+        )
+        self._pending_microchecks[session_id] = pending
+        self._turns_since_microcheck[session_id] = 0
+        logger.info("Microcheck %s created for session %s", microcheck_id, session_id)
+
+    def has_pending_microcheck(self, session_id: str) -> bool:
+        self._ensure_session_loaded(session_id)
+        if self._microcheck_enabled:
+            self._refresh_idle_microcheck_state(session_id)
+        return self._pending_microchecks.get(session_id) is not None
+
+    def get_pending_microcheck(self, session_id: str) -> Optional[dict]:
+        self._ensure_session_loaded(session_id)
+        pending = self._pending_microchecks.get(session_id)
+        if not pending:
+            return None
+        topics = self._topics.get(session_id, {})
+        questions_payload: List[dict] = []
+        for question in pending.questions:
+            topic = topics.get(question.topic_id)
+            questions_payload.append(
+                {
+                    "question_id": question.question_id,
+                    "prompt": question.prompt,
+                    "options": question.options,
+                    "topic_id": question.topic_id,
+                    "topic_name": topic.name if topic else None,
+                }
+            )
+        return {
+            "microcheck_id": pending.microcheck_id,
+            "created_at": pending.created_at.isoformat(),
+            "questions": questions_payload,
+        }
+
+    def submit_microcheck(self, session_id: str, microcheck_id: str, answers: Dict[str, str]) -> dict:
+        self._ensure_session_loaded(session_id)
+        pending = self._pending_microchecks.get(session_id)
+        if not pending or pending.microcheck_id != microcheck_id:
+            raise PendingMicrocheckError("No matching microcheck found for submission.")
+
+        topics = self._topics.get(session_id, {})
+        results: List[MicrocheckResultRecord] = []
+        feedback_lines: List[str] = []
+        mastery_updates: List[dict] = []
+
+        for question in pending.questions:
+            selected_option = answers.get(question.question_id, "")
+            correct = selected_option == question.correct_option_id
+            results.append(
+                MicrocheckResultRecord(
+                    question_id=question.question_id,
+                    selected_option_id=selected_option,
+                    correct=correct,
+                    topic_id=question.topic_id,
+                )
+            )
+            topic = topics.get(question.topic_id)
+            if topic:
+                delta = 0.1 if correct else -0.1
+                new_mastery = max(0.0, min(1.0, topic.mastery + delta))
+                updated_topic = TopicRecord(
+                    topic_id=topic.topic_id,
+                    name=topic.name,
+                    keywords=topic.keywords,
+                    message_count=topic.message_count,
+                    mastery=new_mastery,
+                )
+                topics[topic.topic_id] = updated_topic
+                guidance = (
+                    f"Nice work on {topic.name}! Keep practicing by teaching it aloud."
+                    if correct
+                    else f"Revisit {topic.name} and try to articulate the key idea again."
+                )
+                feedback_lines.append(guidance)
+                mastery_updates.append(
+                    {
+                        "topic_id": topic.topic_id,
+                        "topic_name": topic.name,
+                        "mastery": new_mastery,
+                        "correct": correct,
+                    }
+                )
+            else:
+                feedback_lines.append("Consider reviewing recent material to reinforce your understanding.")
+
+        attempt = MicrocheckAttemptRecord(
+            microcheck_id=microcheck_id,
+            created_at=pending.created_at,
+            completed_at=datetime.now(timezone.utc),
+            results=results,
+            feedback="\n".join(feedback_lines),
+        )
+        self._microcheck_history[session_id].append(attempt)
+        self._pending_microchecks.pop(session_id, None)
+        self._turns_since_microcheck[session_id] = 0
+        self._last_activity[session_id] = datetime.now(timezone.utc)
+        self._persist_session(session_id)
+
+        return {
+            "microcheck_id": microcheck_id,
+            "feedback": attempt.feedback,
+            "results": [
+                {
+                    "question_id": result.question_id,
+                    "selected_option_id": result.selected_option_id,
+                    "correct": result.correct,
+                    "topic_id": result.topic_id,
+                    "topic_name": self._topics[session_id].get(result.topic_id).name
+                    if self._topics[session_id].get(result.topic_id)
+                    else None,
+                }
+                for result in results
+            ],
+            "mastery_updates": mastery_updates,
+        }
+
     def _select_repository(self) -> ChatRepository:
         try:
             return FirestoreChatRepository()
@@ -237,6 +520,12 @@ class LLMService:
             self._last_prompts.pop(session_id, None)
             self._guidance_ready.pop(session_id, None)
             self._last_classifications.pop(session_id, None)
+            self._topics.pop(session_id, None)
+            self._pending_microchecks.pop(session_id, None)
+            self._microcheck_history.pop(session_id, None)
+            self._turns_since_microcheck.pop(session_id, None)
+            self._last_activity.pop(session_id, None)
+            self._topic_examples.pop(session_id, None)
         else:
             self._hydrate_session_from_record(record)
 
@@ -256,6 +545,8 @@ class LLMService:
                 metadata["classification_source"] = entry.classification_source
             if entry.classification_raw is not None:
                 metadata["classification_raw"] = entry.classification_raw
+            if entry.topic_id is not None:
+                metadata["topic_id"] = entry.topic_id
 
             if entry.role == "human":
                 session_messages.append(HumanMessage(content=entry.content, additional_kwargs=metadata))
@@ -270,6 +561,36 @@ class LLMService:
         self._session_modes[record.session_id] = record.session_mode or "friction"
         self._last_prompts[record.session_id] = record.last_prompt or "friction"
         self._guidance_ready[record.session_id] = record.guidance_ready
+        topics_map: Dict[str, TopicRecord] = {}
+        for topic in record.topics or []:
+            if topic.topic_id:
+                topics_map[topic.topic_id] = topic
+        self._topics[record.session_id] = topics_map
+        self._microcheck_history[record.session_id] = list(record.microcheck_history or [])
+        if record.pending_microcheck:
+            self._pending_microchecks[record.session_id] = record.pending_microcheck
+        else:
+            self._pending_microchecks.pop(record.session_id, None)
+        self._turns_since_microcheck[record.session_id] = record.turns_since_microcheck
+        examples_map: Dict[str, List[str]] = defaultdict(list)
+        for message in session_messages:
+            if isinstance(message, HumanMessage):
+                topic_id = (
+                    message.additional_kwargs.get("topic_id")
+                    if hasattr(message, "additional_kwargs")
+                    else None
+                )
+                if topic_id:
+                    snippet = self._extract_display_text(message)
+                    if snippet:
+                        examples_map[topic_id].append(snippet[:160])
+        for topic_id in topics_map:
+            examples_map.setdefault(topic_id, [])
+        self._topic_examples[record.session_id] = examples_map  # type: ignore[assignment]
+        inferred_activity = self._infer_last_activity(record.session_id)
+        if inferred_activity:
+            self._last_activity[record.session_id] = inferred_activity
+
         last_classification: Optional[ClassificationResult] = None
         for message in reversed(session_messages):
             if isinstance(message, HumanMessage):
@@ -316,6 +637,10 @@ class LLMService:
             session_mode=self._session_modes.get(session_id, "friction"),
             last_prompt=self._last_prompts.get(session_id, "friction"),
             guidance_ready=self._guidance_ready.get(session_id, False),
+            topics=list(self._topics.get(session_id, {}).values()),
+            microcheck_history=list(self._microcheck_history.get(session_id, [])),
+            pending_microcheck=self._pending_microchecks.get(session_id),
+            turns_since_microcheck=self._turns_since_microcheck.get(session_id, 0),
         )
 
     def _convert_message_to_record(
@@ -337,6 +662,7 @@ class LLMService:
             classification_rationale=additional.get("classification_rationale"),
             classification_source=additional.get("classification_source"),
             classification_raw=additional.get("classification_raw"),
+            topic_id=additional.get("topic_id"),
         )
 
     @staticmethod
@@ -373,15 +699,24 @@ class LLMService:
             if role == "system":
                 continue
             # Return a lean payload tailored for the frontend UI.
+            additional = message.additional_kwargs if hasattr(message, "additional_kwargs") else {}
+            topic_id = additional.get("topic_id") if isinstance(additional, dict) else None
+            topic_name = None
+            if topic_id:
+                topic = self._topics.get(session_id, {}).get(topic_id)
+                if topic:
+                    topic_name = topic.name
             history.append(
                 {
                     "role": "user" if role == "human" else "assistant",
                     "content": self._extract_display_text(message),
                     "created_at": self._extract_timestamp(message).isoformat(),
-                    "turn_classification": message.additional_kwargs.get("turn_classification") if hasattr(message, "additional_kwargs") else None,
-                    "classification_rationale": message.additional_kwargs.get("classification_rationale") if hasattr(message, "additional_kwargs") else None,
-                    "classification_source": message.additional_kwargs.get("classification_source") if hasattr(message, "additional_kwargs") else None,
-                    "classification_raw": message.additional_kwargs.get("classification_raw") if hasattr(message, "additional_kwargs") else None,
+                    "turn_classification": additional.get("turn_classification") if isinstance(additional, dict) else None,
+                    "classification_rationale": additional.get("classification_rationale") if isinstance(additional, dict) else None,
+                    "classification_source": additional.get("classification_source") if isinstance(additional, dict) else None,
+                    "classification_raw": additional.get("classification_raw") if isinstance(additional, dict) else None,
+                    "topic_id": topic_id,
+                    "topic_name": topic_name,
                 }
             )
 
@@ -415,10 +750,18 @@ class LLMService:
         self._last_prompts.pop(session_id, None)
         self._friction_progress.pop(session_id, None)
         self._guidance_ready.pop(session_id, None)
+        self._topics.pop(session_id, None)
+        self._pending_microchecks.pop(session_id, None)
+        self._microcheck_history.pop(session_id, None)
+        self._turns_since_microcheck.pop(session_id, None)
+        self._last_activity.pop(session_id, None)
+        self._topic_examples.pop(session_id, None)
         self._last_classifications.pop(session_id, None)
 
     def get_session_state(self, session_id: str) -> Dict[str, Any]:
         self._ensure_session_loaded(session_id)
+        if self._microcheck_enabled:
+            self._refresh_idle_microcheck_state(session_id)
         progress = self._friction_progress.get(session_id, 0)
         threshold = self._friction_threshold
         guidance_ready = self._guidance_ready.get(session_id, False)
@@ -428,6 +771,18 @@ class LLMService:
         classification_source = None
         if classification is not None:
             classification_source = "model" if classification.used_model else "heuristic"
+        microcheck_pending = self._pending_microchecks.get(session_id) is not None
+        turns_since_microcheck = self._turns_since_microcheck.get(session_id, 0)
+        turns_until_microcheck = 0 if microcheck_pending else max(self._microcheck_frequency - turns_since_microcheck, 0)
+        topics_summary = [
+            {
+                "topic_id": topic.topic_id,
+                "topic_name": topic.name,
+                "message_count": topic.message_count,
+                "mastery": topic.mastery,
+            }
+            for topic in sorted(self._topics.get(session_id, {}).values(), key=lambda item: item.message_count, reverse=True)
+        ]
         return {
             "next_prompt": next_prompt,
             "last_prompt": self._last_prompts.get(session_id, "friction"),
@@ -436,6 +791,11 @@ class LLMService:
             "responses_needed": remaining,
             "guidance_ready": guidance_ready,
             "min_words": self._friction_min_words,
+            "microcheck_pending": microcheck_pending,
+            "microcheck_turns_remaining": turns_until_microcheck,
+            "microcheck_frequency": self._microcheck_frequency,
+            "microcheck_question_count": self._microcheck_question_count,
+            "topics": topics_summary,
             "classification_label": classification.label if classification else None,
             "classification_rationale": classification.rationale if classification else None,
             "classification_source": classification_source,

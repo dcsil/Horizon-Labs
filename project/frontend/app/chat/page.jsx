@@ -7,6 +7,8 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 const STREAM_ENDPOINT = `${API_BASE_URL}/chat/stream`;
 const HISTORY_ENDPOINT = `${API_BASE_URL}/chat/history`;
 const STATE_ENDPOINT = `${API_BASE_URL}/debug/friction-state`;
+const MICROCHECK_PENDING_ENDPOINT = `${API_BASE_URL}/microchecks/pending`;
+const MICROCHECK_SUBMIT_ENDPOINT = `${API_BASE_URL}/microchecks/submit`;
 
 const SESSION_LIST_STORAGE_KEY = "horizon-chat-sessions";
 const LAST_SESSION_STORAGE_KEY = "horizon-chat-last-session";
@@ -45,6 +47,15 @@ export default function ChatPage() {
   const [guidanceReady, setGuidanceReady] = useState(false);
   const [guidanceModalOpen, setGuidanceModalOpen] = useState(false);
   const [guidanceToggle, setGuidanceToggle] = useState(false);
+  const [microcheckState, setMicrocheckState] = useState({
+    pending: false,
+    modalOpen: false,
+    dismissed: false,
+    data: null,
+    feedback: null,
+  });
+  const [microcheckAnswers, setMicrocheckAnswers] = useState({});
+  const [isSubmittingMicrocheck, setIsSubmittingMicrocheck] = useState(false);
 
   const applyGuidanceState = useCallback((ready) => {
     setGuidanceReady((prev) => {
@@ -62,6 +73,7 @@ export default function ChatPage() {
   const listRef = useRef(null);
   const abortRef = useRef(null);
   const sessionRef = useRef(null);
+  const microcheckStateRef = useRef(microcheckState);
 
   const persistSessions = useCallback((updater) => {
     setSessions((prev) => {
@@ -146,6 +158,10 @@ export default function ChatPage() {
     };
   }, []);
 
+  useEffect(() => {
+    microcheckStateRef.current = microcheckState;
+  }, [microcheckState]);
+
   const fetchHistory = useCallback(async (sessionId) => {
     const url = `${HISTORY_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
     const response = await fetch(url);
@@ -171,14 +187,82 @@ export default function ChatPage() {
     return { messages: restored, latestTimestamp: latest };
   }, []);
 
-  const fetchSessionState = useCallback(async (sessionId) => {
-    const url = `${STATE_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch session state (status ${response.status})`);
+const fetchSessionState = useCallback(async (sessionId) => {
+  const url = `${STATE_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch session state (status ${response.status})`);
+  }
+  return response.json();
+}, []);
+
+const fetchPendingMicrocheck = useCallback(async (sessionId) => {
+  const url = `${MICROCHECK_PENDING_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
+  const response = await fetch(url);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to fetch microcheck (status ${response.status})`);
+  }
+  return response.json();
+}, []);
+
+const syncMicrocheckState = useCallback(
+  async (sessionId, statePayload) => {
+    if (!sessionId) return;
+    const pending = Boolean(statePayload?.microcheck_pending);
+    if (!pending) {
+      setMicrocheckState((prev) =>
+        prev.pending
+          ? { pending: false, modalOpen: false, dismissed: false, data: null, feedback: null }
+          : prev,
+      );
+      setMicrocheckAnswers({});
+      return;
     }
-    return response.json();
-  }, []);
+
+    let data = microcheckStateRef.current.data;
+    try {
+      const fetched = await fetchPendingMicrocheck(sessionId);
+      if (!fetched) {
+        setMicrocheckState({
+          pending: false,
+          modalOpen: false,
+          dismissed: false,
+          data: null,
+          feedback: null,
+        });
+        setMicrocheckAnswers({});
+        return;
+      }
+      data = fetched;
+    } catch (err) {
+      console.error(err);
+      return;
+    }
+
+    setMicrocheckState((prev) => {
+      const sameMicrocheck = prev.data && prev.data.microcheck_id === data.microcheck_id;
+      return {
+        pending: true,
+        data,
+        feedback: null,
+        dismissed: sameMicrocheck ? prev.dismissed : false,
+        modalOpen: sameMicrocheck ? prev.modalOpen && !prev.dismissed : true,
+      };
+    });
+    setMicrocheckAnswers((prev) => {
+      const current = microcheckStateRef.current;
+      const sameMicrocheck = current.data && current.data.microcheck_id === data.microcheck_id;
+      if (sameMicrocheck && Object.keys(prev || {}).length > 0) {
+        return prev;
+      }
+      return {};
+    });
+  },
+  [fetchPendingMicrocheck],
+);
 
   useEffect(() => {
     if (!activeSessionId) return;
@@ -205,6 +289,7 @@ export default function ChatPage() {
 
         const ready = Boolean(statePayload && statePayload.guidance_ready);
         applyGuidanceState(ready);
+        await syncMicrocheckState(activeSessionId, statePayload);
 
         persistSessions((prev) =>
           prev.map((session, index) =>
@@ -223,6 +308,7 @@ export default function ChatPage() {
         setError(message);
         setMessages([createWelcomeMessage()]);
         applyGuidanceState(false);
+        await syncMicrocheckState(activeSessionId, null);
       } finally {
         if (!cancelled) {
           setIsLoadingHistory(false);
@@ -233,7 +319,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, applyGuidanceState, fetchHistory, fetchSessionState, persistSessions]);
+  }, [activeSessionId, applyGuidanceState, fetchHistory, fetchSessionState, persistSessions, syncMicrocheckState]);
 
   const handleCreateSession = () => {
     const now = new Date().toISOString();
@@ -259,6 +345,8 @@ export default function ChatPage() {
     setError(null);
     setIsStreaming(false);
     applyGuidanceState(false);
+    setMicrocheckState({ pending: false, modalOpen: false, dismissed: false, data: null, feedback: null });
+    setMicrocheckAnswers({});
     if (typeof window !== "undefined") {
       window.localStorage.setItem(LAST_SESSION_STORAGE_KEY, id);
     }
@@ -273,6 +361,8 @@ export default function ChatPage() {
     sessionRef.current = id;
     setMessages([createWelcomeMessage()]);
     setError(null);
+    setMicrocheckState({ pending: false, modalOpen: false, dismissed: false, data: null, feedback: null });
+    setMicrocheckAnswers({});
     applyGuidanceState(false);
     setActiveSessionId(id);
   };
@@ -309,7 +399,12 @@ export default function ChatPage() {
 
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming || isLoadingHistory || isClassifying) return;
+    if (!trimmed || isStreaming || isLoadingHistory || isClassifying || microcheckState.pending) {
+      if (microcheckState.pending) {
+        setMicrocheckState((prev) => ({ ...prev, modalOpen: true, dismissed: false }));
+      }
+      return;
+    }
 
     const currentSession = ensureSessionId();
     if (!currentSession) return;
@@ -430,6 +525,7 @@ export default function ChatPage() {
           setIsClassifying(false);
           const ready = Boolean(statePayload && statePayload.guidance_ready);
           applyGuidanceState(ready);
+          await syncMicrocheckState(currentSession, statePayload);
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -441,6 +537,9 @@ export default function ChatPage() {
         if (useGuidanceNow) {
           applyGuidanceState(false);
         }
+        if (microcheckStateRef.current.pending) {
+          setMicrocheckState((prev) => ({ ...prev, modalOpen: true, dismissed: false }));
+        }
       } finally {
         setIsStreaming(false);
         setIsClassifying(false);
@@ -448,6 +547,9 @@ export default function ChatPage() {
         if (useGuidanceNow) {
           setGuidanceToggle(false);
           setGuidanceModalOpen(false);
+        }
+        if (!microcheckStateRef.current.pending) {
+          setMicrocheckState((prev) => ({ ...prev, modalOpen: false }));
         }
       }
     })();
@@ -547,6 +649,22 @@ export default function ChatPage() {
           {isStreaming && <div className="animate-pulse text-xs text-gray-500">streaming…</div>}
         </div>
         {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+        {microcheckState.pending && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <span>Microcheck pending — complete it to continue the conversation.</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setMicrocheckState((prev) => ({ ...prev, modalOpen: true, dismissed: false }))
+                }
+                className="rounded-md border border-blue-500 px-3 py-1 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                Open Microcheck
+              </button>
+            </div>
+          </div>
+        )}
         {guidanceReady && (
           <div className="mt-4">
             {guidanceModalOpen ? (
@@ -584,17 +702,150 @@ export default function ChatPage() {
             )}
           </div>
         )}
+        {microcheckState.pending && microcheckState.modalOpen && microcheckState.data && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/70 px-4 py-8">
+            <div className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+              <button
+                type="button"
+                onClick={() =>
+                  setMicrocheckState((prev) => ({ ...prev, modalOpen: false, dismissed: true }))
+                }
+                className="absolute right-4 top-3 text-xl text-slate-500 hover:text-slate-700"
+                aria-label="Close microcheck"
+              >
+                ×
+              </button>
+              <h3 className="text-lg font-semibold text-slate-900">Microcheck</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Answer each question to unlock the chat. Your responses help us target the right review topics.
+              </p>
+              <div className="mt-4 space-y-4">
+                {microcheckState.data.questions.map((question, index) => (
+                  <div key={question.question_id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Q{index + 1}. {question.prompt}
+                    </h4>
+                    {question.topic_name && (
+                      <p className="mt-1 text-xs italic text-slate-600">Topic: {question.topic_name}</p>
+                    )}
+                    <div className="mt-3 space-y-2 text-sm">
+                      {question.options.map((option) => (
+                        <label key={option.id} className="flex cursor-pointer items-start gap-2">
+                          <input
+                            type="radio"
+                            name={question.question_id}
+                            value={option.id}
+                            checked={microcheckAnswers[question.question_id] === option.id}
+                            onChange={() =>
+                              setMicrocheckAnswers((prev) => ({
+                                ...prev,
+                                [question.question_id]: option.id,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                          <span>{option.text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {microcheckState.feedback && (
+                <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  {microcheckState.feedback}
+                </div>
+              )}
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const questions = microcheckState.data?.questions ?? [];
+                    const unanswered = questions.filter(
+                      (question) => !microcheckAnswers[question.question_id],
+                    );
+                    if (unanswered.length > 0) {
+                      setMicrocheckState((prev) => ({
+                        ...prev,
+                        feedback: "Please answer every microcheck question before submitting.",
+                      }));
+                      return;
+                    }
+                    setIsSubmittingMicrocheck(true);
+                    try {
+                      const response = await fetch(MICROCHECK_SUBMIT_ENDPOINT, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          session_id: sessionRef.current,
+                          microcheck_id: microcheckState.data?.microcheck_id,
+                          answers: questions.map((question) => ({
+                            question_id: question.question_id,
+                            selected_option_id: microcheckAnswers[question.question_id],
+                          })),
+                        }),
+                      });
+                      if (!response.ok) {
+                        const payload = await response.json().catch(() => ({}));
+                        throw new Error(payload.detail || `Submit failed (${response.status})`);
+                      }
+                      const result = await response.json();
+                      setMicrocheckState({
+                        pending: false,
+                        modalOpen: false,
+                        dismissed: false,
+                        data: null,
+                        feedback: result.feedback,
+                      });
+                      setMicrocheckAnswers({});
+                      const latestState = await fetchSessionState(sessionRef.current).catch(() => null);
+                      if (latestState) {
+                        const ready = Boolean(latestState.guidance_ready);
+                        applyGuidanceState(ready);
+                        await syncMicrocheckState(sessionRef.current, latestState);
+                      }
+                    } catch (err) {
+                      setMicrocheckState((prev) => ({
+                        ...prev,
+                        feedback:
+                          err instanceof Error
+                            ? err.message
+                            : "Unable to submit microcheck — try again.",
+                      }));
+                    } finally {
+                      setIsSubmittingMicrocheck(false);
+                    }
+                  }}
+                  disabled={isSubmittingMicrocheck}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isSubmittingMicrocheck ? "Submitting…" : "Submit answers"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMicrocheckState((prev) => ({ ...prev, modalOpen: false, dismissed: true }))
+                  }
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Do it later
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="mt-4 flex items-center gap-2">
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && handleSend()}
             placeholder="Type your message…"
-            className="flex-1 rounded-lg border px-3 py-2"
+            disabled={isStreaming || isLoadingHistory || isClassifying || microcheckState.pending}
+            className="flex-1 rounded-lg border px-3 py-2 disabled:opacity-50"
           />
           <button
             onClick={handleSend}
-            disabled={isStreaming || isLoadingHistory || isClassifying}
+            disabled={isStreaming || isLoadingHistory || isClassifying || microcheckState.pending}
             className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
           >
             Send

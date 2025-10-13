@@ -48,6 +48,7 @@ def _make_settings() -> Settings:
         telemetry_sample_rate=0.0,
         friction_attempts_required=1,
         friction_min_words=1,
+        microcheck_enabled=False,
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Literal, Optional, Protocol
 
@@ -26,6 +26,7 @@ class ChatMessageRecord:
     classification_rationale: Optional[str] = None
     classification_source: Optional[str] = None  # "model" | "heuristic"
     classification_raw: Optional[str] = None
+    topic_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, str]:
         payload = {
@@ -43,6 +44,8 @@ class ChatMessageRecord:
             payload["classification_source"] = self.classification_source
         if self.classification_raw is not None:
             payload["classification_raw"] = self.classification_raw
+        if self.topic_id is not None:
+            payload["topic_id"] = self.topic_id
         return payload
 
     @staticmethod
@@ -60,6 +63,174 @@ class ChatMessageRecord:
             classification_rationale=payload.get("classification_rationale"),
             classification_source=payload.get("classification_source"),
             classification_raw=payload.get("classification_raw"),
+            topic_id=payload.get("topic_id"),
+        )
+
+
+@dataclass(frozen=True)
+class TopicRecord:
+    topic_id: str
+    name: str
+    keywords: List[str]
+    message_count: int
+    mastery: float
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "topic_id": self.topic_id,
+            "name": self.name,
+            "keywords": list(self.keywords),
+            "message_count": self.message_count,
+            "mastery": self.mastery,
+        }
+
+    @staticmethod
+    def from_dict(payload: Dict[str, object]) -> "TopicRecord":
+        keywords = payload.get("keywords") or []
+        if not isinstance(keywords, list):
+            keywords = []
+        return TopicRecord(
+            topic_id=str(payload.get("topic_id", "")),
+            name=str(payload.get("name", "Topic")),
+            keywords=[str(keyword) for keyword in keywords],
+            message_count=int(payload.get("message_count", 0)),
+            mastery=float(payload.get("mastery", 0.0)),
+        )
+
+
+@dataclass(frozen=True)
+class MicrocheckQuestionRecord:
+    question_id: str
+    prompt: str
+    options: List[Dict[str, str]]
+    correct_option_id: str
+    topic_id: str
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "question_id": self.question_id,
+            "prompt": self.prompt,
+            "options": list(self.options),
+            "correct_option_id": self.correct_option_id,
+            "topic_id": self.topic_id,
+        }
+
+    @staticmethod
+    def from_dict(payload: Dict[str, object]) -> "MicrocheckQuestionRecord":
+        options = payload.get("options") or []
+        if not isinstance(options, list):
+            options = []
+        safe_options: List[Dict[str, str]] = []
+        for option in options:
+            if isinstance(option, dict):
+                option_id = str(option.get("id", ""))
+                text = str(option.get("text", ""))
+                safe_options.append({"id": option_id, "text": text})
+        return MicrocheckQuestionRecord(
+            question_id=str(payload.get("question_id", "")),
+            prompt=str(payload.get("prompt", "")),
+            options=safe_options,
+            correct_option_id=str(payload.get("correct_option_id", "")),
+            topic_id=str(payload.get("topic_id", "")),
+        )
+
+
+@dataclass(frozen=True)
+class MicrocheckResultRecord:
+    question_id: str
+    selected_option_id: str
+    correct: bool
+    topic_id: str
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "question_id": self.question_id,
+            "selected_option_id": self.selected_option_id,
+            "correct": self.correct,
+            "topic_id": self.topic_id,
+        }
+
+    @staticmethod
+    def from_dict(payload: Dict[str, object]) -> "MicrocheckResultRecord":
+        return MicrocheckResultRecord(
+            question_id=str(payload.get("question_id", "")),
+            selected_option_id=str(payload.get("selected_option_id", "")),
+            correct=bool(payload.get("correct", False)),
+            topic_id=str(payload.get("topic_id", "")),
+        )
+
+
+@dataclass(frozen=True)
+class MicrocheckAttemptRecord:
+    microcheck_id: str
+    created_at: datetime
+    completed_at: datetime
+    results: List[MicrocheckResultRecord]
+    feedback: str
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "microcheck_id": self.microcheck_id,
+            "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat(),
+            "results": [result.to_dict() for result in self.results],
+            "feedback": self.feedback,
+        }
+
+    @staticmethod
+    def from_dict(payload: Dict[str, object]) -> "MicrocheckAttemptRecord":
+        created_at_raw = payload.get("created_at")
+        completed_at_raw = payload.get("completed_at")
+        created_at = (
+            datetime.fromisoformat(created_at_raw) if isinstance(created_at_raw, str) else datetime.now(timezone.utc)
+        )
+        completed_at = (
+            datetime.fromisoformat(completed_at_raw) if isinstance(completed_at_raw, str) else datetime.now(timezone.utc)
+        )
+        raw_results = payload.get("results") or []
+        results = [
+            MicrocheckResultRecord.from_dict(item)
+            for item in raw_results
+            if isinstance(item, dict)
+        ]
+        return MicrocheckAttemptRecord(
+            microcheck_id=str(payload.get("microcheck_id", "")),
+            created_at=created_at,
+            completed_at=completed_at,
+            results=results,
+            feedback=str(payload.get("feedback", "")),
+        )
+
+
+@dataclass(frozen=True)
+class PendingMicrocheckRecord:
+    microcheck_id: str
+    created_at: datetime
+    questions: List[MicrocheckQuestionRecord]
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "microcheck_id": self.microcheck_id,
+            "created_at": self.created_at.isoformat(),
+            "questions": [question.to_dict() for question in self.questions],
+        }
+
+    @staticmethod
+    def from_dict(payload: Dict[str, object]) -> "PendingMicrocheckRecord":
+        created_at_raw = payload.get("created_at")
+        created_at = (
+            datetime.fromisoformat(created_at_raw) if isinstance(created_at_raw, str) else datetime.now(timezone.utc)
+        )
+        raw_questions = payload.get("questions") or []
+        questions = [
+            MicrocheckQuestionRecord.from_dict(question)
+            for question in raw_questions
+            if isinstance(question, dict)
+        ]
+        return PendingMicrocheckRecord(
+            microcheck_id=str(payload.get("microcheck_id", "")),
+            created_at=created_at,
+            questions=questions,
         )
 
 
@@ -73,8 +244,14 @@ class ChatSessionRecord:
     session_mode: str
     last_prompt: str
     guidance_ready: bool = False
+    topics: List[TopicRecord] = field(default_factory=list)
+    microcheck_history: List[MicrocheckAttemptRecord] = field(default_factory=list)
+    pending_microcheck: Optional[PendingMicrocheckRecord] = None
+    turns_since_microcheck: int = 0
 
     def to_dict(self) -> Dict[str, object]:
+        topics = self.topics or []
+        history = self.microcheck_history or []
         payload = {
             "session_id": self.session_id,
             "messages": [msg.to_dict() for msg in self.messages],
@@ -82,7 +259,12 @@ class ChatSessionRecord:
             "session_mode": self.session_mode,
             "last_prompt": self.last_prompt,
             "guidance_ready": self.guidance_ready,
+            "topics": [topic.to_dict() for topic in topics],
+            "microcheck_history": [attempt.to_dict() for attempt in history],
+            "turns_since_microcheck": self.turns_since_microcheck,
         }
+        if self.pending_microcheck is not None:
+            payload["pending_microcheck"] = self.pending_microcheck.to_dict()
         payload["updated_at"] = _firestore_timestamp()
         return payload
 
@@ -101,6 +283,20 @@ class ChatSessionRecord:
             session_mode=str(payload.get("session_mode", "friction")),
             last_prompt=str(payload.get("last_prompt", "friction")),
             guidance_ready=bool(payload.get("guidance_ready", False)),
+            topics=[
+                TopicRecord.from_dict(topic)
+                for topic in (payload.get("topics") or [])
+                if isinstance(topic, dict)
+            ],
+            microcheck_history=[
+                MicrocheckAttemptRecord.from_dict(attempt)
+                for attempt in (payload.get("microcheck_history") or [])
+                if isinstance(attempt, dict)
+            ],
+            pending_microcheck=PendingMicrocheckRecord.from_dict(payload["pending_microcheck"])
+            if isinstance(payload.get("pending_microcheck"), dict)
+            else None,
+            turns_since_microcheck=int(payload.get("turns_since_microcheck", 0)),
         )
 
 

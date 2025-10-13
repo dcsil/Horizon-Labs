@@ -27,9 +27,28 @@ const $stateClassificationRaw = document.querySelector('#state-classification-ra
 const $useGuidanceToggle = document.querySelector('#use-guidance');
 const $guidanceStatus = document.querySelector('#guidance-status');
 const $stateGuidanceReady = document.querySelector('#state-guidance-ready');
+const $stateMicrocheckPending = document.querySelector('#state-microcheck-pending');
+const $stateMicrocheckRemaining = document.querySelector('#state-microcheck-remaining');
+const $stateTopicsList = document.querySelector('#state-topics-list');
+const $microcheckOverlay = document.querySelector('#microcheck-overlay');
+const $microcheckForm = document.querySelector('#microcheck-form');
+const $microcheckSubmit = document.querySelector('#microcheck-submit');
+const $microcheckLater = document.querySelector('#microcheck-later');
+const $microcheckClose = document.querySelector('#microcheck-close');
+const $microcheckBanner = document.querySelector('#microcheck-banner');
+const $microcheckOpen = document.querySelector('#microcheck-open');
+const $microcheckFeedback = document.querySelector('#microcheck-feedback');
+const $microcheckSubtitle = document.querySelector('#microcheck-subtitle');
 
 const GUIDANCE_LOCKED_TEXT = 'Guidance unlocks after you meet the attempt threshold.';
 const GUIDANCE_READY_TEXT = 'Guidance unlocked — check the box to receive direct guidance.';
+
+const microcheckState = {
+  pending: false,
+  data: null,
+  answers: new Map(),
+  dismissed: false,
+};
 
 const decoder = new TextDecoder('utf-8');
 let abortController = null;
@@ -169,6 +188,7 @@ async function refreshState() {
   const sessionId = ensureSessionId();
   if (!sessionId) {
     renderState(null);
+    hideMicrocheckBanner();
     return;
   }
 
@@ -179,9 +199,11 @@ async function refreshState() {
     }
     const data = await response.json();
     renderState(data);
+    await syncMicrocheckUI(data);
   } catch (err) {
     renderState(null);
     appendToLog(`State error: ${err instanceof Error ? err.message : String(err)}\n`, true);
+    await syncMicrocheckUI(null);
   }
 }
 
@@ -233,6 +255,253 @@ function formatRawOutput(sourceRaw, rawValue, label) {
   return '--';
 }
 
+function renderTopics(topics) {
+  $stateTopicsList.innerHTML = '';
+  if (!topics || topics.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'placeholder';
+    li.textContent = 'No topics detected yet.';
+    $stateTopicsList.appendChild(li);
+    return;
+  }
+
+  topics.forEach((topic) => {
+    const li = document.createElement('li');
+    const mastery = typeof topic.mastery === 'number' ? Math.round(topic.mastery * 100) : null;
+    const name = topic.topic_name || topic.topicId || topic.topic_id || 'Topic';
+    const parts = [`${name}`];
+    if (typeof topic.message_count === 'number') {
+      parts.push(`turns: ${topic.message_count}`);
+    }
+    if (mastery !== null && !Number.isNaN(mastery)) {
+      parts.push(`mastery: ${mastery}%`);
+    }
+    li.textContent = parts.join(' • ');
+    $stateTopicsList.appendChild(li);
+  });
+}
+
+function hideMicrocheckBanner() {
+  $microcheckBanner.classList.add('hidden');
+}
+
+function showMicrocheckBanner() {
+  $microcheckBanner.classList.remove('hidden');
+}
+
+function applyMicrocheckLock() {
+  if (microcheckState.pending) {
+    $message.disabled = true;
+    $sendBtn.disabled = true;
+  } else if (!abortController) {
+    $message.disabled = false;
+    $sendBtn.disabled = false;
+  }
+}
+
+function renderMicrocheck(data) {
+  if (!data) {
+    return;
+  }
+  $microcheckForm.innerHTML = '';
+  data.questions.forEach((question, index) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'microcheck-question';
+
+    const heading = document.createElement('h4');
+    heading.textContent = `Q${index + 1}. ${question.prompt}`;
+    wrapper.appendChild(heading);
+
+    if (question.topic_name) {
+      const topicLabel = document.createElement('p');
+      topicLabel.className = 'microcheck-topic';
+      topicLabel.textContent = `Topic: ${question.topic_name}`;
+      wrapper.appendChild(topicLabel);
+    }
+
+    (question.options || []).forEach((option) => {
+      const label = document.createElement('label');
+      label.className = 'microcheck-option';
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `microcheck-${question.question_id}`;
+      input.value = option.id;
+      input.dataset.questionId = question.question_id;
+      if (microcheckState.answers.get(question.question_id) === option.id) {
+        input.checked = true;
+      }
+
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(option.text));
+      wrapper.appendChild(label);
+    });
+
+    $microcheckForm.appendChild(wrapper);
+  });
+
+  const totalQuestions = data.questions ? data.questions.length : 0;
+  $microcheckSubtitle.textContent = totalQuestions
+    ? `Answer ${totalQuestions} question${totalQuestions === 1 ? '' : 's'} to continue.`
+    : 'Complete this quick check to continue chatting.';
+  $microcheckFeedback.classList.add('hidden');
+}
+
+async function openMicrocheck(forceFetch = false) {
+  const sessionId = ensureSessionId();
+  if (!sessionId) {
+    return;
+  }
+
+  if (!microcheckState.data || forceFetch) {
+    const payload = await fetchMicrocheck(sessionId);
+    if (!payload) {
+      clearMicrocheckState();
+      return;
+    }
+    microcheckState.data = payload;
+    microcheckState.answers = new Map();
+  }
+
+  microcheckState.dismissed = false;
+  renderMicrocheck(microcheckState.data);
+  hideMicrocheckBanner();
+  $microcheckOverlay.classList.remove('hidden');
+  applyMicrocheckLock();
+}
+
+function closeMicrocheck(keepPending = true) {
+  $microcheckOverlay.classList.add('hidden');
+  if (keepPending && microcheckState.pending) {
+    microcheckState.dismissed = true;
+    showMicrocheckBanner();
+  } else {
+    microcheckState.dismissed = false;
+    hideMicrocheckBanner();
+  }
+  applyMicrocheckLock();
+}
+
+function clearMicrocheckState() {
+  microcheckState.pending = false;
+  microcheckState.data = null;
+  microcheckState.answers = new Map();
+  microcheckState.dismissed = false;
+  $microcheckForm.innerHTML = '';
+  $microcheckFeedback.classList.add('hidden');
+  closeMicrocheck(false);
+}
+
+function handleMicrocheckOptionChange(event) {
+  if (event.target && event.target.matches("input[type='radio'][data-question-id]")) {
+    microcheckState.answers.set(event.target.dataset.questionId, event.target.value);
+  }
+}
+
+async function fetchMicrocheck(sessionId) {
+  const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
+  try {
+    const response = await fetch(`${base}/microchecks/pending?session_id=${encodeURIComponent(sessionId)}`);
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`Failed to fetch microcheck: ${response.status} ${response.statusText}`);
+    }
+    const payload = await response.json();
+    return payload;
+  } catch (err) {
+    appendToLog(`Microcheck fetch error: ${err instanceof Error ? err.message : String(err)}\n`, true);
+    return null;
+  }
+}
+
+async function syncMicrocheckUI(state) {
+  const pending = Boolean(state && state.microcheck_pending);
+  if (!pending) {
+    clearMicrocheckState();
+    applyMicrocheckLock();
+    return;
+  }
+
+  const sessionId = ensureSessionId();
+  if (!sessionId) {
+    return;
+  }
+
+  microcheckState.pending = true;
+  if (!microcheckState.data) {
+    const payload = await fetchMicrocheck(sessionId);
+    if (!payload) {
+      clearMicrocheckState();
+      return;
+    }
+    microcheckState.data = payload;
+    microcheckState.answers = new Map();
+  }
+
+  if (microcheckState.dismissed) {
+    showMicrocheckBanner();
+    $microcheckOverlay.classList.add('hidden');
+  } else {
+    await openMicrocheck();
+  }
+  applyMicrocheckLock();
+}
+
+async function submitMicrocheck() {
+  if (!microcheckState.data) {
+    return;
+  }
+
+  const unanswered = (microcheckState.data.questions || []).filter(
+    (question) => !microcheckState.answers.has(question.question_id),
+  );
+  if (unanswered.length > 0) {
+    appendToLog('Please answer every microcheck question before submitting.\n', true);
+    return;
+  }
+
+  const sessionId = ensureSessionId();
+  const base = trimTrailingSlash($backendUrl.value.trim() || 'http://localhost:8000');
+  const payload = {
+    session_id: sessionId,
+    microcheck_id: microcheckState.data.microcheck_id,
+    answers: microcheckState.data.questions.map((question) => ({
+      question_id: question.question_id,
+      selected_option_id: microcheckState.answers.get(question.question_id) || '',
+    })),
+  };
+
+  try {
+    const response = await fetch(`${base}/microchecks/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Submit failed (${response.status})`);
+    }
+
+    const result = await response.json();
+    appendToLog(`\n[Microcheck feedback]\n${result.feedback}\n`);
+    microcheckState.pending = false;
+    microcheckState.data = null;
+    microcheckState.answers.clear();
+    microcheckState.dismissed = false;
+    $microcheckFeedback.textContent = result.feedback || 'Thanks!';
+    $microcheckFeedback.classList.remove('hidden');
+    closeMicrocheck(false);
+    applyMicrocheckLock();
+    await refreshState();
+    await loadHistory();
+  } catch (err) {
+    appendToLog(`Microcheck submit error: ${err instanceof Error ? err.message : String(err)}\n`, true);
+  }
+}
+
 function renderState(data) {
   if (!data) {
     $stateNextPrompt.textContent = '--';
@@ -246,6 +515,9 @@ function renderState(data) {
     $useGuidanceToggle.checked = false;
     $useGuidanceToggle.disabled = true;
     $guidanceStatus.textContent = GUIDANCE_LOCKED_TEXT;
+    $stateMicrocheckPending.textContent = '--';
+    $stateMicrocheckRemaining.textContent = '--';
+    renderTopics([]);
     return;
   }
 
@@ -255,6 +527,9 @@ function renderState(data) {
   const threshold = Number(data.friction_threshold ?? 0);
   const remaining = Number(data.responses_needed ?? Math.max(threshold - attempts, 0));
   const guidanceReady = Boolean(data.guidance_ready);
+  const microcheckPending = Boolean(data.microcheck_pending);
+  const microcheckRemaining = Number(data.microcheck_turns_remaining ?? 0);
+  const topics = Array.isArray(data.topics) ? data.topics : [];
   const label = data.classification_label || '--';
   const sourceRaw = data.classification_source || '';
   const rationale = data.classification_rationale && data.classification_rationale.trim().length > 0
@@ -272,6 +547,9 @@ function renderState(data) {
   $stateRemaining.textContent = remaining;
   $stateMinWords.textContent = data.min_words ?? '--';
   $stateGuidanceReady.textContent = guidanceReady ? 'Yes' : 'No';
+  $stateMicrocheckPending.textContent = microcheckPending ? 'Yes' : 'No';
+  $stateMicrocheckRemaining.textContent = microcheckPending ? '0' : microcheckRemaining;
+  renderTopics(topics);
   $stateClassificationLabel.textContent = label;
   $stateClassificationSource.textContent = sourceDisplay;
   $stateClassificationLLM.textContent = llmUsage;
@@ -315,6 +593,7 @@ async function loadHistory() {
 async function setActiveSession(sessionId) {
   if (!sessionId) return;
   $sessionId.value = sessionId;
+  clearMicrocheckState();
   await refreshSessionsList(sessionId);
   await refreshState();
   await loadHistory();
@@ -323,6 +602,13 @@ async function setActiveSession(sessionId) {
 async function sendMessage() {
   if (abortController) {
     appendToLog('A stream is already in progress.\n', true);
+    return;
+  }
+
+  if (microcheckState.pending) {
+    appendToLog('Complete the pending microcheck before sending another message.\n', true);
+    microcheckState.dismissed = false;
+    openMicrocheck();
     return;
   }
 
@@ -436,12 +722,17 @@ async function sendMessage() {
     }
   } finally {
     abortController = null;
-    $sendBtn.disabled = false;
     $resetBtn.disabled = false;
     $refreshBtn.disabled = false;
     $historyBtn.disabled = false;
     if (!$useGuidanceToggle.disabled) {
       $useGuidanceToggle.checked = false;
+    }
+    if (microcheckState.pending) {
+      applyMicrocheckLock();
+    } else {
+      $sendBtn.disabled = false;
+      $message.disabled = false;
     }
   }
 }
@@ -469,6 +760,7 @@ async function resetSession() {
     renderState(null);
     renderHistory([]);
     $sessionId.value = '';
+    clearMicrocheckState();
   } catch (err) {
     appendToLog(`Reset error: ${err instanceof Error ? err.message : String(err)}\n`, true);
   }
@@ -483,6 +775,7 @@ async function createNewSession() {
   renderSessions(id);
   renderState(null);
   renderHistory([]);
+  clearMicrocheckState();
 }
 
 $sendBtn.addEventListener('click', (event) => {
@@ -503,6 +796,25 @@ $refreshBtn.addEventListener('click', (event) => {
 $historyBtn.addEventListener('click', (event) => {
   event.preventDefault();
   loadHistory();
+});
+
+$microcheckForm.addEventListener('change', handleMicrocheckOptionChange);
+$microcheckSubmit.addEventListener('click', (event) => {
+  event.preventDefault();
+  submitMicrocheck();
+});
+$microcheckLater.addEventListener('click', (event) => {
+  event.preventDefault();
+  closeMicrocheck(true);
+});
+$microcheckClose.addEventListener('click', (event) => {
+  event.preventDefault();
+  closeMicrocheck(true);
+});
+$microcheckOpen.addEventListener('click', async (event) => {
+  event.preventDefault();
+  microcheckState.dismissed = false;
+  await openMicrocheck(true);
 });
 
 $newSessionBtn.addEventListener('click', (event) => {

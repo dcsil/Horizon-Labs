@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import AsyncGenerator
 
 import logging
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from clients.llm import LLMService, get_llm_service
+from clients.llm.service import PendingMicrocheckError
 from clients.llm.settings import get_settings
 
 from .schemas import (
@@ -17,6 +19,9 @@ from .schemas import (
     ChatResetRequest,
     ChatSessionListResponse,
     ChatStreamRequest,
+    MicrocheckSubmitRequest,
+    MicrocheckSubmitResponse,
+    PendingMicrocheckResponse,
     QuizStreamRequest,
 )
 
@@ -64,6 +69,9 @@ async def chat_stream(
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
+    if llm_service.has_pending_microcheck(request.session_id):
+        raise HTTPException(status_code=409, detail="microcheck_pending")
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             async for chunk in llm_service.stream_chat(
@@ -75,6 +83,9 @@ async def chat_stream(
             ):
                 payload = json.dumps({"type": "token", "data": chunk})
                 yield f"data: {payload}\n\n"
+        except PendingMicrocheckError as exc:
+            error_payload = json.dumps({"type": "error", "message": str(exc)})
+            yield f"event: error\ndata: {error_payload}\n\n"
         except Exception as exc:  # pragma: no cover - safety net for streaming
             error_payload = json.dumps({"type": "error", "message": str(exc)})
             yield f"event: error\ndata: {error_payload}\n\n"
@@ -107,6 +118,35 @@ async def chat_history(
     """Return persisted chat turns for the requested session."""
     history = llm_service.get_chat_history(session_id)
     return ChatHistoryResponse(**history)
+
+
+@app.get("/microchecks/pending", response_model=PendingMicrocheckResponse)
+def microcheck_pending(
+    session_id: str = Query(..., description="Session identifier"),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> PendingMicrocheckResponse:
+    payload = llm_service.get_pending_microcheck(session_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="no_pending_microcheck")
+    created_at = datetime.fromisoformat(payload["created_at"]) if isinstance(payload.get("created_at"), str) else datetime.now()
+    return PendingMicrocheckResponse(
+        microcheck_id=payload["microcheck_id"],
+        created_at=created_at,
+        questions=payload["questions"],
+    )
+
+
+@app.post("/microchecks/submit", response_model=MicrocheckSubmitResponse)
+def microcheck_submit(
+    request: MicrocheckSubmitRequest,
+    llm_service: LLMService = Depends(get_llm_service),
+) -> MicrocheckSubmitResponse:
+    answers = {answer.question_id: answer.selected_option_id for answer in request.answers}
+    try:
+        result = llm_service.submit_microcheck(request.session_id, request.microcheck_id, answers)
+    except PendingMicrocheckError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return MicrocheckSubmitResponse(**result)
 
 
 @app.get("/chat/sessions", response_model=ChatSessionListResponse)
