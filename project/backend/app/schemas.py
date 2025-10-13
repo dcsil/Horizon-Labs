@@ -26,6 +26,14 @@ class ChatMessage(BaseModel):
     role: Literal["user", "assistant"] = Field(..., description="Speaker of the message")
     content: str = Field(..., description="Human-readable message text")
     created_at: datetime = Field(..., description="Timestamp when the message was recorded")
+    turn_classification: Optional[Literal["good", "needs_focusing"]] = Field(
+        default=None,
+        description="Classifier label assigned to the learner turn",
+    )
+    classification_rationale: Optional[str] = Field(
+        default=None,
+        description="Brief justification for the assigned turn classification",
+    )
 
 
 class ChatHistoryResponse(BaseModel):

@@ -164,7 +164,9 @@ function renderHistory(messages) {
   const lines = messages.map((entry) => {
     const timestamp = new Date(entry.created_at || Date.now()).toLocaleTimeString();
     const role = entry.role === 'assistant' ? 'AI' : 'User';
-    return `[${timestamp}] ${role}: ${entry.content}`;
+    const label = entry.turn_classification ? ` [${entry.turn_classification}]` : '';
+    const rationale = entry.classification_rationale ? ` — ${entry.classification_rationale}` : '';
+    return `[${timestamp}] ${role}${label}: ${entry.content}${rationale}`;
   });
 
   $historyLog.textContent = lines.join('\n');

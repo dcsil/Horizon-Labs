@@ -22,6 +22,10 @@ class ChatMessageRecord:
     content: str
     created_at: datetime
     display_content: Optional[str] = None
+    turn_classification: Optional[str] = None  # "good" | "needs_focusing"
+    classification_rationale: Optional[str] = None
+    classification_source: Optional[str] = None  # "model" | "heuristic"
+    classification_raw: Optional[str] = None
 
     def to_dict(self) -> Dict[str, str]:
         payload = {
@@ -31,6 +35,14 @@ class ChatMessageRecord:
         }
         if self.display_content is not None:
             payload["display_content"] = self.display_content
+        if self.turn_classification is not None:
+            payload["turn_classification"] = self.turn_classification
+        if self.classification_rationale is not None:
+            payload["classification_rationale"] = self.classification_rationale
+        if self.classification_source is not None:
+            payload["classification_source"] = self.classification_source
+        if self.classification_raw is not None:
+            payload["classification_raw"] = self.classification_raw
         return payload
 
     @staticmethod
@@ -44,6 +56,10 @@ class ChatMessageRecord:
             content=payload.get("content", ""),
             created_at=parsed_at,
             display_content=payload.get("display_content"),
+            turn_classification=payload.get("turn_classification"),
+            classification_rationale=payload.get("classification_rationale"),
+            classification_source=payload.get("classification_source"),
+            classification_raw=payload.get("classification_raw"),
         )
 
 

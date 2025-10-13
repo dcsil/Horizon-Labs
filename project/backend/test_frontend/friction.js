@@ -19,6 +19,11 @@ const $stateAttempts = document.querySelector('#state-attempts');
 const $stateThreshold = document.querySelector('#state-threshold');
 const $stateRemaining = document.querySelector('#state-remaining');
 const $stateMinWords = document.querySelector('#state-min-words');
+const $stateClassificationLabel = document.querySelector('#state-classification-label');
+const $stateClassificationSource = document.querySelector('#state-classification-source');
+const $stateClassificationRationale = document.querySelector('#state-classification-rationale');
+const $stateClassificationLLM = document.querySelector('#state-classification-llm');
+const $stateClassificationRaw = document.querySelector('#state-classification-raw');
 
 const decoder = new TextDecoder('utf-8');
 let abortController = null;
@@ -49,7 +54,14 @@ function renderHistory(messages) {
   const lines = messages.map((entry) => {
     const ts = entry.created_at ? new Date(entry.created_at).toLocaleString() : 'unknown time';
     const role = entry.role === 'assistant' ? 'AI' : entry.role === 'user' ? 'User' : 'System';
-    return `[${ts}] ${role}: ${entry.content ?? ''}`;
+    const sourceSuffix = entry.classification_source
+      ? entry.classification_source === 'model'
+        ? ' (LLM)'
+        : ' (heuristic)'
+      : '';
+    const label = entry.turn_classification ? ` [${entry.turn_classification}${sourceSuffix}]` : '';
+    const rationale = entry.classification_rationale ? ` — ${entry.classification_rationale}` : '';
+    return `[${ts}] ${role}${label}: ${entry.content ?? ''}${rationale}`;
   });
 
   $historyLog.textContent = lines.join('\n');
@@ -167,6 +179,54 @@ async function refreshState() {
   }
 }
 
+function resetClassificationDisplay() {
+  $stateClassificationLabel.textContent = '--';
+  $stateClassificationSource.textContent = '--';
+  $stateClassificationSource.classList.remove('source-model', 'source-heuristic', 'source-unknown');
+  $stateClassificationSource.classList.add('source-unknown');
+  $stateClassificationLLM.textContent = '--';
+  $stateClassificationRationale.textContent = '--';
+  $stateClassificationRaw.textContent = '--';
+}
+
+function describeSource(sourceRaw) {
+  if (sourceRaw === 'model') return 'LLM (model)';
+  if (sourceRaw === 'heuristic') return 'Heuristic fallback';
+  return '--';
+}
+
+function describeLLMUsage(sourceRaw, label) {
+  if (sourceRaw === 'model') return 'Yes';
+  if (sourceRaw === 'heuristic') return label !== '--' ? 'No – heuristic used' : '--';
+  return '--';
+}
+
+function applySourceBadgeClass(sourceRaw) {
+  $stateClassificationSource.classList.remove('source-model', 'source-heuristic', 'source-unknown');
+  if (sourceRaw === 'model') {
+    $stateClassificationSource.classList.add('source-model');
+  } else if (sourceRaw === 'heuristic') {
+    $stateClassificationSource.classList.add('source-heuristic');
+  } else {
+    $stateClassificationSource.classList.add('source-unknown');
+  }
+}
+
+function formatRawOutput(sourceRaw, rawValue, label) {
+  if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+    const trimmed = rawValue.trim();
+    try {
+      return JSON.stringify(JSON.parse(trimmed), null, 2);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (sourceRaw === 'heuristic' && label !== '--') {
+    return 'Heuristic used – no LLM response.';
+  }
+  return '--';
+}
+
 function renderState(data) {
   if (!data) {
     $stateNextPrompt.textContent = '--';
@@ -175,6 +235,7 @@ function renderState(data) {
     $stateThreshold.textContent = '0';
     $stateRemaining.textContent = '--';
     $stateMinWords.textContent = '--';
+    resetClassificationDisplay();
     return;
   }
 
@@ -183,6 +244,15 @@ function renderState(data) {
   const attempts = Number(data.friction_attempts ?? 0);
   const threshold = Number(data.friction_threshold ?? 0);
   const remaining = Number(data.responses_needed ?? Math.max(threshold - attempts, 0));
+  const label = data.classification_label || '--';
+  const sourceRaw = data.classification_source || '';
+  const rationale = data.classification_rationale && data.classification_rationale.trim().length > 0
+    ? data.classification_rationale
+    : null;
+  const sourceDisplay = describeSource(sourceRaw);
+  const llmUsage = describeLLMUsage(sourceRaw, label);
+  applySourceBadgeClass(sourceRaw || (label !== '--' ? 'unknown' : ''));
+  const rawOutputDisplay = formatRawOutput(sourceRaw, data.classification_raw, label);
 
   $stateNextPrompt.textContent = nextPrompt;
   $stateLastPrompt.textContent = lastPrompt;
@@ -190,6 +260,11 @@ function renderState(data) {
   $stateThreshold.textContent = threshold;
   $stateRemaining.textContent = remaining;
   $stateMinWords.textContent = data.min_words ?? '--';
+  $stateClassificationLabel.textContent = label;
+  $stateClassificationSource.textContent = sourceDisplay;
+  $stateClassificationLLM.textContent = llmUsage;
+  $stateClassificationRationale.textContent = rationale ?? '--';
+  $stateClassificationRaw.textContent = rawOutputDisplay;
 }
 
 async function loadHistory() {

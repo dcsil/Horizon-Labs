@@ -38,6 +38,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([createWelcomeMessage()]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isClassifying, setIsClassifying] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [error, setError] = useState(null);
 
@@ -143,6 +144,8 @@ export default function ChatPage() {
       role: msg.role,
       text: msg.content ?? "",
       createdAt: msg.created_at ?? null,
+      turnClassification: msg.turn_classification ?? null,
+      classificationRationale: msg.classification_rationale ?? null,
     }));
     const latest =
       restored.length && restored[restored.length - 1].createdAt
@@ -268,7 +271,7 @@ export default function ChatPage() {
 
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || isStreaming || isLoadingHistory) return;
+    if (!trimmed || isStreaming || isLoadingHistory || isClassifying) return;
 
     const currentSession = ensureSessionId();
     if (!currentSession) return;
@@ -286,6 +289,7 @@ export default function ChatPage() {
     ]);
     setInput("");
     setIsStreaming(true);
+    setIsClassifying(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -380,6 +384,7 @@ export default function ChatPage() {
                 : session
             )
           );
+          setIsClassifying(false);
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -387,8 +392,10 @@ export default function ChatPage() {
           updateMessage(assistantId, () => ({ text: `⚠️ ${message}` }));
           setError(message);
         }
+        setIsClassifying(false);
       } finally {
         setIsStreaming(false);
+        setIsClassifying(false);
         abortRef.current = null;
       }
     })();
@@ -498,7 +505,7 @@ export default function ChatPage() {
           />
           <button
             onClick={handleSend}
-            disabled={isStreaming || isLoadingHistory}
+          disabled={isStreaming || isLoadingHistory || isClassifying}
             className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
           >
             Send

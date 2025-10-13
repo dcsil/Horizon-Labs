@@ -40,6 +40,9 @@ The service reads the following environment variables (populate `backend/.env`):
 - `FRICTION_ATTEMPTS_REQUIRED` (optional): number of qualifying learner responses before direct guidance is unlocked (default `3`).
 - `FRICTION_MIN_WORDS` (optional): minimum learner word count for a response to count toward the friction gate (default `15`).
 - `FIREBASE_PROJECT_ID` / `GOOGLE_APPLICATION_CREDENTIALS` (optional): only required when using the Firestore chat repository.
+- `TURN_CLASSIFIER_ENABLED` (optional): enable the learner turn classification service (default `true`).
+- `TURN_CLASSIFIER_MODEL` (optional): override the classification model (defaults to the main chat model).
+- `TURN_CLASSIFIER_TEMPERATURE` / `TURN_CLASSIFIER_TIMEOUT_SECONDS` (optional): adjust sampling behaviour and timeout for the classifier.
 
 `backend/clients/llm/settings.py` loads these values once per process using `dotenv` and `pydantic`.
 
@@ -49,6 +52,7 @@ The service reads the following environment variables (populate `backend/.env`):
 
 - Maintains per-service system prompts (friction vs. guidance vs. quiz) to shape model behaviour.
 - Applies an adaptive friction gate, requiring a configurable number of substantive learner responses before direct answers are given.
+- Runs a lightweight turn classifier on every learner message (`good` vs. `needs_focusing`) to inform the friction gate and persist coaching metadata.
 - Persists chat transcripts to Firestore when the optional dependency is configured; otherwise falls back to an in-memory repository for local development.
 - Maintains `HumanMessage` / `AIMessage` history per `session_id` in memory.
 - Streams model tokens via `llm.astream(...)`, yielding each chunk to callers.

@@ -17,6 +17,7 @@ from ..database.chat_repository import (
     InMemoryChatRepository,
     ChatSessionSummary,
 )
+from .classifier import ClassificationResult, TurnClassifier
 from .settings import Settings, get_settings
 from .telemetry import TelemetryEvent, TelemetryLogger
 
@@ -33,10 +34,12 @@ class LLMService:
         self._session_modes: DefaultDict[str, str] = defaultdict(lambda: "friction")
         self._last_prompts: DefaultDict[str, str] = defaultdict(lambda: "friction")
         self._friction_progress: DefaultDict[str, int] = defaultdict(int)
+        self._last_classifications: Dict[str, ClassificationResult] = {}
         self._friction_threshold = settings.friction_attempts_required
         self._friction_min_words = settings.friction_min_words
         self._telemetry = TelemetryLogger(settings)
         self._repository: ChatRepository = repository or self._select_repository()
+        self._classifier = TurnClassifier(settings)
 
     async def stream_chat(
         self,
@@ -57,14 +60,24 @@ class LLMService:
         self._ensure_session_loaded(session_id)
         session_history = self._conversations[session_id]
 
+        classification = await self._classify_turn(
+            session_id=session_id,
+            learner_text=question,
+            session_history=session_history,
+        )
+
         word_count = self._count_words(question)
         current_mode = self._session_modes[session_id]
         progress_before = self._friction_progress[session_id]
         friction_attempts = progress_before
         guidance_for_turn = False
 
+        qualifies_by_length = word_count >= self._friction_min_words
+        qualifies_by_label = classification.label == "good"
+        qualifies_for_progress = qualifies_by_label or qualifies_by_length
+
         if current_mode == "friction":
-            if word_count >= self._friction_min_words:
+            if qualifies_for_progress:
                 friction_attempts = progress_before + 1
                 if friction_attempts >= self._friction_threshold:
                     guidance_for_turn = True
@@ -89,6 +102,10 @@ class LLMService:
             additional_kwargs={
                 "created_at": timestamp,
                 "display_text": question,
+                "turn_classification": classification.label,
+                "classification_rationale": classification.rationale,
+                "classification_source": "model" if classification.used_model else "heuristic",
+                "classification_raw": classification.raw_output,
             },
         )
         messages: List[SystemMessage | HumanMessage | AIMessage] = [
@@ -146,6 +163,8 @@ class LLMService:
             guidance_used=guidance_for_turn or None,
             friction_attempts=friction_attempts if not guidance_for_turn else self._friction_threshold,
             friction_threshold=self._friction_threshold,
+            turn_classification=classification.label,
+            classification_source="model" if classification.used_model else "heuristic",
         )
         self._telemetry.record(event)
 
@@ -168,6 +187,22 @@ class LLMService:
     def _count_words(text: str) -> int:
         return len([word for word in text.strip().split() if word])
 
+    async def _classify_turn(
+        self,
+        *,
+        session_id: str,
+        learner_text: str,
+        session_history: List[HumanMessage | AIMessage],
+    ) -> ClassificationResult:
+        result = await self._classifier.classify(
+            session_id=session_id,
+            learner_text=learner_text,
+            conversation=session_history,
+            min_words=self._friction_min_words,
+        )
+        self._last_classifications[session_id] = result
+        return result
+
     def _select_repository(self) -> ChatRepository:
         try:
             return FirestoreChatRepository()
@@ -186,6 +221,7 @@ class LLMService:
             self._friction_progress.pop(session_id, None)
             self._session_modes.pop(session_id, None)
             self._last_prompts.pop(session_id, None)
+            self._last_classifications.pop(session_id, None)
         else:
             self._hydrate_session_from_record(record)
 
@@ -197,6 +233,14 @@ class LLMService:
             }
             if entry.display_content is not None:
                 metadata["display_text"] = entry.display_content
+            if entry.turn_classification is not None:
+                metadata["turn_classification"] = entry.turn_classification
+            if entry.classification_rationale is not None:
+                metadata["classification_rationale"] = entry.classification_rationale
+            if entry.classification_source is not None:
+                metadata["classification_source"] = entry.classification_source
+            if entry.classification_raw is not None:
+                metadata["classification_raw"] = entry.classification_raw
 
             if entry.role == "human":
                 session_messages.append(HumanMessage(content=entry.content, additional_kwargs=metadata))
@@ -210,6 +254,27 @@ class LLMService:
         self._friction_progress[record.session_id] = record.friction_progress
         self._session_modes[record.session_id] = record.session_mode or "friction"
         self._last_prompts[record.session_id] = record.last_prompt or "friction"
+        last_classification: Optional[ClassificationResult] = None
+        for message in reversed(session_messages):
+            if isinstance(message, HumanMessage):
+                additional = getattr(message, "additional_kwargs", {}) or {}
+                label = additional.get("turn_classification")
+                if label:
+                    rationale = additional.get("classification_rationale")
+                    source = additional.get("classification_source")
+                    raw_output = additional.get("classification_raw")
+                    used_model = True if source == "model" else False
+                    last_classification = ClassificationResult(
+                        label=label,
+                        rationale=rationale,
+                        used_model=used_model,
+                        raw_output=raw_output,
+                    )
+                    break
+        if last_classification:
+            self._last_classifications[record.session_id] = last_classification
+        else:
+            self._last_classifications.pop(record.session_id, None)
 
     def _persist_session(self, session_id: str) -> None:
         try:
@@ -245,11 +310,16 @@ class LLMService:
 
         created_at = self._extract_timestamp(message)
         display_text = self._extract_display_text(message)
+        additional = getattr(message, "additional_kwargs", {}) or {}
         return ChatMessageRecord(
             role=role,
             content=message.content,
             created_at=created_at,
             display_content=display_text,
+            turn_classification=additional.get("turn_classification"),
+            classification_rationale=additional.get("classification_rationale"),
+            classification_source=additional.get("classification_source"),
+            classification_raw=additional.get("classification_raw"),
         )
 
     @staticmethod
@@ -291,6 +361,10 @@ class LLMService:
                     "role": "user" if role == "human" else "assistant",
                     "content": self._extract_display_text(message),
                     "created_at": self._extract_timestamp(message).isoformat(),
+                    "turn_classification": message.additional_kwargs.get("turn_classification") if hasattr(message, "additional_kwargs") else None,
+                    "classification_rationale": message.additional_kwargs.get("classification_rationale") if hasattr(message, "additional_kwargs") else None,
+                    "classification_source": message.additional_kwargs.get("classification_source") if hasattr(message, "additional_kwargs") else None,
+                    "classification_raw": message.additional_kwargs.get("classification_raw") if hasattr(message, "additional_kwargs") else None,
                 }
             )
 
@@ -323,6 +397,7 @@ class LLMService:
         self._session_modes.pop(session_id, None)
         self._last_prompts.pop(session_id, None)
         self._friction_progress.pop(session_id, None)
+        self._last_classifications.pop(session_id, None)
 
     def get_session_state(self, session_id: str) -> Dict[str, Any]:
         self._ensure_session_loaded(session_id)
@@ -332,6 +407,10 @@ class LLMService:
         next_prompt = "guidance" if remaining <= 1 else "friction"
         if self._session_modes.get(session_id) == "guidance":
             next_prompt = "guidance"
+        classification = self._last_classifications.get(session_id)
+        classification_source = None
+        if classification is not None:
+            classification_source = "model" if classification.used_model else "heuristic"
         return {
             "next_prompt": next_prompt,
             "last_prompt": self._last_prompts.get(session_id, "friction"),
@@ -339,6 +418,10 @@ class LLMService:
             "friction_threshold": threshold,
             "responses_needed": remaining if remaining > 0 else 0,
             "min_words": self._friction_min_words,
+            "classification_label": classification.label if classification else None,
+            "classification_rationale": classification.rationale if classification else None,
+            "classification_source": classification_source,
+            "classification_raw": classification.raw_output if classification else None,
         }
 
     @staticmethod

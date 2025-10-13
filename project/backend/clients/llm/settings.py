@@ -41,6 +41,26 @@ class Settings(BaseModel):
         ge=1,
         description="Minimum learner word count for a response to count toward the friction gate",
     )
+    turn_classifier_enabled: bool = Field(
+        default=True,
+        description="Enable the turn-classification service for learner responses",
+    )
+    turn_classifier_model: str = Field(
+        default="google/gemini-2.0-flash-exp:free",
+        description="Model used to classify learner turns",
+    )
+    turn_classifier_temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Temperature for the classifier prompt",
+    )
+    turn_classifier_timeout_seconds: int = Field(
+        default=20,
+        ge=1,
+        le=120,
+        description="Timeout for classifier model calls",
+    )
 
 
 @lru_cache
@@ -61,4 +81,8 @@ def get_settings() -> Settings:
         telemetry_sample_rate=float(os.environ.get("TELEMETRY_SAMPLE_RATE", "1.0")),
         friction_attempts_required=int(os.environ.get("FRICTION_ATTEMPTS_REQUIRED", "3")),
         friction_min_words=int(os.environ.get("FRICTION_MIN_WORDS", "15")),
+        turn_classifier_enabled=os.environ.get("TURN_CLASSIFIER_ENABLED", "true").lower() == "true",
+        turn_classifier_model=os.environ.get("TURN_CLASSIFIER_MODEL", "google/gemini-2.0-flash-exp:free"),
+        turn_classifier_temperature=float(os.environ.get("TURN_CLASSIFIER_TEMPERATURE", "0.0")),
+        turn_classifier_timeout_seconds=int(os.environ.get("TURN_CLASSIFIER_TIMEOUT_SECONDS", "20")),
     )

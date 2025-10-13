@@ -23,6 +23,8 @@ class TelemetryEvent:
     guidance_used: Optional[bool] = None
     friction_attempts: Optional[int] = None
     friction_threshold: Optional[int] = None
+    turn_classification: Optional[str] = None
+    classification_source: Optional[str] = None
 
 
 class TelemetryLogger:
