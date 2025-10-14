@@ -13,3 +13,6 @@ langchain-google-genai
 langchain-core
 beautifulsoup4
 google-cloud-firestore
+pytest
+pytest-asyncio
+httpx

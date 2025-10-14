@@ -38,19 +38,6 @@ class DummyLLM:
         )
 
 
-def _make_settings() -> Settings:
-    return Settings(
-        openrouter_api_key="test-key",
-        openrouter_base_url="http://localhost",
-        model_name="test-model",
-        request_timeout_seconds=5,
-        telemetry_enabled=False,
-        telemetry_sample_rate=0.0,
-        friction_attempts_required=1,
-        friction_min_words=1,
-    )
-
-
 def test_inmemory_repository_roundtrip():
     repo = InMemoryChatRepository()
     record = ChatSessionRecord(
@@ -81,9 +68,9 @@ def test_inmemory_repository_roundtrip():
 
 
 @pytest.mark.asyncio
-async def test_stream_chat_persists_turns(monkeypatch):
+async def test_stream_chat_persists_turns(monkeypatch, test_settings: Settings):
     repo = InMemoryChatRepository()
-    service = LLMService(_make_settings(), repository=repo)
+    service = LLMService(test_settings, repository=repo)
 
     monkeypatch.setattr("clients.llm.service.ChatOpenAI", DummyLLM)
 

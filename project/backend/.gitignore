@@ -1,2 +1,3 @@
 .env
-horizon-labs-ce7d8-firebase-adminsdk-fbsvc-43ee40a7e3.json
+*-firebase-adminsdk-*.json
+.DS_Store
