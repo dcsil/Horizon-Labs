@@ -1,6 +1,8 @@
 # **Assignment 7 - Competitive CUJ (NotebookLM)**
 ## CUJ Document
 
+**Link to NotebookLM notebook:** https://notebooklm.google.com/notebook/c5f2f400-d3b5-41f8-8fb0-dfa22b632c6c
+
 ### Group Details:
 **Group Name:** Horizon Labs
 
