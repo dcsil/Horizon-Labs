@@ -23,6 +23,7 @@
 1. Seamless compatibility with Gemini models and LangChain pipelines.
 2. Unified provider for both LLM and embedding services, simplifying authentication and monitoring.
 3. Strong multilingual and multimodal semantic understanding.
+
 **Negative / Risks:**
 1. Vendor lock-in within the Google Cloud ecosystem.
 2. Limited transparency into embedding dimensionality and update frequency.
