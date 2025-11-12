@@ -86,6 +86,11 @@ The service reads the following environment variables (populate `backend/.env`):
 - `TURN_CLASSIFIER_ENABLED` (optional): enable the learner turn classification service (default `true`).
 - `TURN_CLASSIFIER_MODEL` (optional): override the classification model (defaults to the main chat model).
 - `TURN_CLASSIFIER_TEMPERATURE` / `TURN_CLASSIFIER_TIMEOUT_SECONDS` (optional): adjust sampling behaviour and timeout for the classifier.
+- `EMBEDDING_MODEL_NAME` (optional): embedding model used for document ingestion (default `text-embedding-3-large`).
+- `PINECONE_API_KEY` (required for ingestion): API key for the Pinecone vector index.
+- `PINECONE_INDEX_NAME` (required for ingestion): name of the Pinecone index to upsert slide chunks into.
+- `PINECONE_ENVIRONMENT` (optional): Pinecone project/environment identifier when required by the account type.
+- `PINECONE_NAMESPACE` (optional): namespace used when writing vectors (defaults to `slides`).
 
 `backend/clients/llm/settings.py` loads these values once per process using `dotenv` and `pydantic`.
 
@@ -116,7 +121,7 @@ Defined in `backend/app/main.py`:
 - `POST /chat/reset` – Clears in-memory history for a given session id.
 - `GET /chat/history` – Returns the persisted transcript for a session so clients can restore the UI after refreshes.
 - `GET /chat/sessions` – Lists all known chat sessions with last-updated timestamps and message counts.
-- `POST /ingest/upload` – Skeleton accepting a file + metadata and returning HTTP 501 until the ingestion pipeline is implemented.
+- `POST /ingest/upload` – Accepts a slide deck (`.pptx`) and metadata, runs the ingestion pipeline, and returns counts for parsed slides and indexed chunks.
 - `POST /quiz/stream` – SSE scaffold for quiz generation; currently returns an `event: error` noting the feature is pending.
 - `GET /debug/friction-state` – Development helper that returns the adaptive friction counters for a given `session_id`.
 
@@ -159,3 +164,56 @@ Visit Swagger docs at `http://localhost:8000/docs` for interactive requests. Whe
   - `messages`: ordered array of `{ role, content, display_content, created_at }` records.
   - `friction_progress`, `session_mode`, `last_prompt`: friction state needed for continuum gating.
 - Missing or invalid credentials will cause the API to fall back to the in-memory repository; install `google-cloud-firestore` and configure credentials to enable persistence.
+
+## Slide Ingestion Pipeline (M2.5-02)
+
+Uploading a `.pptx` deck or `.pdf` handout to `POST /ingest/upload` now triggers the **parse → chunk → index** pipeline:
+
+1. **Parse** – `python-pptx` extracts per-slide titles and body text while preserving slide numbers.
+   - For PDF uploads, `pypdf` extracts page-level text (`Page N`) so downstream citations can reference page numbers.
+2. **Chunk** – slide text is split into semantic chunks (controlled via `chunk_size`/`chunk_overlap`) but chained to the original slide number for citations.
+3. **Embed** – each chunk is embedded with the configured OpenRouter-compatible embedding model (default `text-embedding-3-large`).
+4. **Index** – vectors are upserted into Pinecone with metadata `{ document_id, slide_number, page_number?, chunk_index, slide_title, source_type, text, … }` so responses can cite `doc → slide/page` origins.
+
+### Configure Pinecone
+
+1. Create a Pinecone account and generate an API key (`Console → API Keys`).
+2. Create an index named to match `PINECONE_INDEX_NAME` with:
+   - **Dimension:** `3072` (matches `text-embedding-3-large`).
+   - **Metric:** `cosine`.
+   - **Pods/replicas:** adjust for your workload; start with the serverless default.
+3. Export the following environment variables in `backend/.env`:
+
+   ```bash
+   PINECONE_API_KEY=pcn_xxxxxxxxxxxxxxxxx
+   PINECONE_INDEX_NAME=horizon-slides
+   # Optional if your key is tied to a specific project/environment
+   PINECONE_ENVIRONMENT=us-east-1-aws
+   PINECONE_NAMESPACE=slides
+   EMBEDDING_MODEL_NAME=text-embedding-3-large
+   ```
+
+If any of the required Pinecone values are missing, the ingestion endpoint will return an HTTP 500 with guidance.
+
+### Client Workflow
+
+```bash
+curl -X POST http://localhost:8000/ingest/upload \
+   -F "session_id=abc123" \
+   -F "file=@slides/week1.pptx" \
+   -F 'metadata={"document_id": "week1", "course": "algebra"}'
+```
+
+Successful uploads respond with:
+
+```json
+{
+   "status": "indexed",
+   "document_id": "week1",
+   "slide_count": 10,
+   "chunk_count": 42,
+   "namespace": "slides"
+}
+```
+
+Use the returned `document_id` and stored `slide_number` / `chunk_index` metadata to ground citations in chat responses.

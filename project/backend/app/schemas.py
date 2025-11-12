@@ -68,3 +68,154 @@ class QuizStreamRequest(BaseModel):
         le=20,
         description="Number of questions to request from the generator",
     )
+
+
+QuizModeLiteral = Literal["assessment", "practice"]
+QuizDifficultyLiteral = Literal["easy", "medium", "hard"]
+QuizStatusLiteral = Literal["in_progress", "completed", "timed_out"]
+
+
+class QuizDefinitionRequest(BaseModel):
+    quiz_id: str = Field(..., description="Stable identifier chosen by the instructor")
+    name: Optional[str] = Field(default=None, description="Human-friendly quiz name")
+    topics: List[str] = Field(..., description="Topics or tags drawn from the source material")
+    default_mode: QuizModeLiteral = Field(..., description="Default mode learners will use when starting sessions")
+    initial_difficulty: QuizDifficultyLiteral = Field(
+        default="medium",
+        description="Difficulty level to seed new sessions",
+    )
+    assessment_num_questions: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=200,
+        description="Total questions served when running in assessment mode",
+    )
+    assessment_time_limit_minutes: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=480,
+        description="Time limit applied to assessment sessions (minutes)",
+    )
+    assessment_max_attempts: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description="Maximum attempts permitted during assessment sessions",
+    )
+    embedding_document_id: Optional[str] = Field(
+        default=None,
+        description="Identifier of the ingested document backing this quiz",
+    )
+    source_filename: Optional[str] = Field(
+        default=None,
+        description="Original filename for the uploaded material",
+    )
+    is_published: bool = Field(
+        default=False,
+        description="Whether this quiz is published and visible to learners",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Additional configuration metadata specific to the quiz builder",
+    )
+
+
+class QuizDefinitionResponse(BaseModel):
+    quiz_id: str
+    name: Optional[str]
+    topics: List[str]
+    default_mode: QuizModeLiteral
+    initial_difficulty: QuizDifficultyLiteral
+    assessment_num_questions: Optional[int]
+    assessment_time_limit_minutes: Optional[int]
+    assessment_max_attempts: Optional[int]
+    embedding_document_id: Optional[str]
+    source_filename: Optional[str]
+    is_published: bool
+    metadata: Optional[Dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuizStartRequest(BaseModel):
+    session_id: str = Field(..., description="Unique identifier for the learner session")
+    quiz_id: str = Field(..., description="Quiz definition to attach this session to")
+    user_id: str = Field(..., description="Learner identifier")
+    mode: Optional[QuizModeLiteral] = Field(
+        default=None,
+        description="Optional override of the default mode",
+    )
+    initial_difficulty: Optional[QuizDifficultyLiteral] = Field(
+        default=None,
+        description="Optional override of the default starting difficulty",
+    )
+    is_preview: bool = Field(
+        default=False,
+        description="Flag preview sessions that should be purged when finished",
+    )
+
+
+class QuizSessionResponse(BaseModel):
+    session_id: str
+    quiz_id: str
+    user_id: str
+    mode: QuizModeLiteral
+    status: QuizStatusLiteral
+    topics: List[str]
+    current_difficulty: QuizDifficultyLiteral
+    questions_answered: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+    deadline: Optional[datetime]
+
+
+class QuizQuestionResponse(BaseModel):
+    session_id: str
+    question_id: str
+    prompt: str
+    choices: List[str]
+    topic: str
+    difficulty: QuizDifficultyLiteral
+    order: int
+    source_metadata: Optional[Dict[str, Any]] = None
+
+
+class QuizAnswerRequest(BaseModel):
+    question_id: str = Field(..., description="Question the learner is answering")
+    selected_answer: str = Field(..., description="Learner's selected response")
+
+
+class TopicPerformance(BaseModel):
+    attempted: int = Field(..., ge=0)
+    correct: int = Field(..., ge=0)
+
+
+class QuizSummaryResponse(BaseModel):
+    session_id: str
+    quiz_id: str
+    user_id: str
+    mode: QuizModeLiteral
+    status: QuizStatusLiteral
+    total_questions: int
+    correct_answers: int
+    accuracy: float
+    topics: Dict[str, TopicPerformance]
+    total_time_ms: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+
+
+class QuizAnswerResponse(BaseModel):
+    question_id: str
+    is_correct: bool
+    selected_answer: str
+    correct_answer: str
+    rationale: str
+    correct_rationale: str
+    incorrect_rationales: Dict[str, str]
+    topic: str
+    difficulty: QuizDifficultyLiteral
+    current_difficulty: QuizDifficultyLiteral
+    session_completed: bool
+    response_ms: Optional[int]
+    summary: Optional[QuizSummaryResponse] = None

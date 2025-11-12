@@ -8,6 +8,8 @@ const poppins = Poppins({
   weight: ['400', '500', '600', '700'],
 })
 
+const ROLE_EVENT = "role-updated";
+
 export default function home() {
   const router = useRouter();
   const [role, setRole] = useState("student");
@@ -18,7 +20,9 @@ export default function home() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("role", role);
+    if (typeof window === "undefined") return;
+    localStorage.setItem("role", role);
+    window.dispatchEvent(new CustomEvent(ROLE_EVENT, { detail: role }));
   }, [role]);
 
   const onStart = () => {
@@ -67,5 +71,3 @@ export default function home() {
     </div>
   );
 }
-
-

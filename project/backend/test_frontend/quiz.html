@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quiz Session Tester</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Quiz Session Tester</h1>
+        <p>Spin up practice or assessment quizzes against the new backend endpoints.</p>
+      </header>
+
+      <section class="controls">
+        <label class="field">
+          <span>Backend Base URL</span>
+          <input id="quiz-backend-url" type="text" value="http://localhost:8000" />
+        </label>
+        <label class="field">
+          <span>Quiz ID</span>
+          <input id="quiz-id" type="text" placeholder="algebra-quiz" />
+        </label>
+        <label class="field">
+          <span>Session ID</span>
+          <input id="quiz-session-id" type="text" placeholder="quiz-session-123" />
+        </label>
+        <label class="field">
+          <span>User ID</span>
+          <input id="quiz-user-id" type="text" placeholder="learner-42" />
+        </label>
+        <label class="field">
+          <span>Topics (comma separated)</span>
+          <input id="quiz-topics" type="text" placeholder="algebra, geometry" />
+        </label>
+        <label class="field">
+          <span>Mode</span>
+          <select id="quiz-mode">
+            <option value="practice">Practice</option>
+            <option value="assessment">Assessment</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Initial Difficulty</span>
+          <select id="quiz-difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <div id="assessment-options" class="field-group hidden">
+          <label class="field">
+            <span>Number of Questions</span>
+            <input id="quiz-num-questions" type="number" min="1" max="100" value="5" />
+          </label>
+          <label class="field">
+            <span>Time Limit (minutes)</span>
+            <input id="quiz-time-limit" type="number" min="1" max="240" value="15" />
+          </label>
+          <label class="field">
+            <span>Max Attempts</span>
+            <input id="quiz-max-attempts" type="number" min="1" max="500" value="5" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="quiz-start-btn" type="button">Start Quiz</button>
+          <button id="quiz-end-btn" type="button" class="secondary" disabled>End Session</button>
+        </div>
+        <p id="quiz-status" class="status"></p>
+      </section>
+
+      <section class="output">
+        <h2>Current Question</h2>
+        <div id="quiz-question-area" class="quiz-card">
+          <p>No question loaded. Start a session to fetch questions.</p>
+        </div>
+        <div class="actions">
+          <button id="quiz-submit-btn" type="button" disabled>Submit Answer</button>
+          <button id="quiz-next-btn" type="button" class="secondary" disabled>Next Question</button>
+        </div>
+      </section>
+
+      <section class="output">
+        <h2>Session Summary</h2>
+        <div id="quiz-summary" class="history-log">No attempts recorded yet.</div>
+      </section>
+    </main>
+    <script src="quiz.js" type="module"></script>
+  </body>
+</html>
