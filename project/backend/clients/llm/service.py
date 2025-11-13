@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
 import time
 from typing import Any, AsyncGenerator, DefaultDict, Dict, List, Optional
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -17,6 +19,7 @@ from ..database.chat_repository import (
     InMemoryChatRepository,
     ChatSessionSummary,
 )
+from ..ingestion import IngestionResult, SlideIngestionPipeline
 from .classifier import ClassificationResult, TurnClassifier
 from .settings import Settings, get_settings
 from .telemetry import TelemetryEvent, TelemetryLogger
@@ -41,6 +44,7 @@ class LLMService:
         self._telemetry = TelemetryLogger(settings)
         self._repository: ChatRepository = repository or self._select_repository()
         self._classifier = TurnClassifier(settings)
+        self._ingestion_pipeline: Optional[SlideIngestionPipeline] = None
 
     async def stream_chat(
         self,
@@ -182,6 +186,37 @@ class LLMService:
         )
         self._telemetry.record(event)
 
+    async def ingest_upload(
+        self,
+        *,
+        session_id: str,
+        file_bytes: bytes,
+        filename: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> IngestionResult:
+        pipeline = self._get_ingestion_pipeline()
+        base_metadata: Dict[str, Any] = dict(metadata or {})
+        base_metadata.setdefault("session_id", session_id)
+        base_metadata.setdefault("source_filename", filename)
+
+        document_id = str(
+            base_metadata.get("document_id")
+            or self._derive_document_id(filename=filename, session_id=session_id)
+        )
+
+        return await pipeline.ingest(
+            document_id=document_id,
+            file_bytes=file_bytes,
+            filename=filename,
+            metadata=base_metadata,
+        )
+
+    async def delete_document(self, document_id: str) -> None:
+        if not document_id:
+            return
+        pipeline = self._get_ingestion_pipeline()
+        pipeline.delete_document(document_id)
+
     @staticmethod
     def _build_prompt(
         question: str,
@@ -223,6 +258,28 @@ class LLMService:
         except RuntimeError as exc:
             logger.warning("Firestore unavailable (%s); falling back to in-memory chat repository.", exc)
             return InMemoryChatRepository()
+
+    def _get_ingestion_pipeline(self) -> SlideIngestionPipeline:
+        if self._ingestion_pipeline is None:
+            try:
+                self._ingestion_pipeline = SlideIngestionPipeline(self._settings)
+            except RuntimeError as exc:  # pragma: no cover - defensive logging
+                logger.exception("Unable to initialise ingestion pipeline")
+                raise RuntimeError(str(exc)) from exc
+        return self._ingestion_pipeline
+
+    @staticmethod
+    def _derive_document_id(*, filename: str, session_id: str) -> str:
+        def _slug(value: str) -> str:
+            sanitized = [ch if ch.isalnum() else "-" for ch in value.lower()]
+            collapsed = "".join(sanitized)
+            collapsed = "-".join(part for part in collapsed.split("-") if part)
+            return collapsed or "document"
+
+        name_slug = _slug(Path(filename).stem or "document")
+        session_slug = _slug(session_id)
+        base = f"{name_slug}-{session_slug}".strip("-")
+        return base or f"document-{uuid4().hex[:8]}"
 
     def _ensure_session_loaded(self, session_id: str) -> None:
         try:

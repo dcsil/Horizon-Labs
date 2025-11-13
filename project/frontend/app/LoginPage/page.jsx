@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from 'next/font/google';
 
@@ -10,11 +10,20 @@ const poppins = Poppins({
 
 export default function LoginPage() {
   const router = useRouter();
+  const [role, setRole] = useState("student");
   const [formData, setFormData] = useState({
-    username: '',
-    password: '',
-    rememberMe: false
+    username: "",
+    password: "",
+    rememberMe: false,
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem("role");
+    if (stored === "instructor" || stored === "student") {
+      setRole(stored);
+    }
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -26,10 +35,11 @@ export default function LoginPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Handle login logic here
-    console.log('Login attempt:', formData);
-    // Redirect to chat page after login
-    router.push("/Student/chat");
+    if (role === "instructor") {
+      router.push("/Instructor");
+    } else {
+      router.push("/Student/HomePage");
+    }
   };
 
   return (
@@ -42,7 +52,7 @@ export default function LoginPage() {
           <div className="bg-white rounded-[28px] shadow-lg p-16 w-[523px] h-[831px] flex flex-col justify-center">
             {/* Title */}
             <h1 className={`text-[42.09px] font-bold font-[700] mb-10 ${poppins.className}`}>
-              Sign In
+              {role === "instructor" ? "Instructor Sign In" : "Student Sign In"}
             </h1>
 
             {/* Form */}

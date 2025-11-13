@@ -16,3 +16,7 @@ google-cloud-firestore
 pytest
 pytest-asyncio
 httpx
+pinecone
+python-pptx
+trio
+pypdf
