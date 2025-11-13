@@ -1,30 +1,16 @@
 # JTBDs, CUJs, Functional & Non-Functional Requirements
 
 ## JTBDs
-- **As a university student**, when engaging with course material* (often using digital aids), I want to surface and close my knowledge gaps effectively while staying within institution policies, so I can save time, retain concepts long-term, and apply them confidently on assessments.
+- **As a university student**, when engaging with course material* (often using digital aids), I want to surface and close my knowledge gaps efficiently while staying within institution policies, so I can save time, retain concepts long-term, and apply them confidently on assessments.
 - **As a professor/teacher**, when running a course where students may use AI aids, I want to define allowable use and identify misconceptions across topics, so I can maintain academic standards and adjust instruction to improve learning outcomes.
 
 *Course material includes lecture notes, textbooks, slides, assignments, and other resources provided by the instructor or institution.
-We will focus on having our platform support pptx and pdf based materials in the first phase.
+We will focus on having our platform support text and pdf/image based materials in the first phase.
 
 ---
 
 ## CUJs
 
-After further discussion, we have updated the CUJs to better reflect our current progress, focus, and priorities. The CUJs have now been divided into 3 categories in regard to their implementation in our MVP phase. Below is a summary of the categories:
-1. **Completed CUJs:** These CUJs have been fully (**dynamically**) implemented and are ready for use in our MVP phase.
-   - Student CUJ 1 — Start a adaptive learning focused chat
-   - Instructor CUJ 1 — Course Material Upload & Quiz Setup (connected to Student CUJ 2)
-2. **CUJs in Progress:** These CUJs are currently being worked on and will be fully (**dynamically**) implemented in our MVP phase.
-   - Student CUJ 2 — Start a slide based dynamic practice quiz session
-   - Instructor CUJ 2 — Diagnose class understanding with Analytics Dashboard v1
-3. **Future CUJs:** These CUJs are ones that will be implemented **statically** in our MVP phase to show the direction of our product, but will not be fully functional until a later phase.
-   - Student CUJ 3 — Self-directed Flashcard generation & review
-   - Instructor CUJ 3 — Configure LLM course policies & content scope
-
----
-
-### Completed CUJs:
 ### Student CUJ 1 — Start a adaptive learning focused chat
 **Statement:** Begin a chat session that helps me study a topic, with adaptive guidance and friction to keep me focused and on-policy.
 
@@ -38,93 +24,50 @@ After further discussion, we have updated the CUJs to better reflect our current
 7. Repeat steps 2–6 until the student feels they have a good grasp of the topic.
 8. At any point, the student can ask for a summary of the key points discussed in the chat session to reinforce their understanding.
 
-*Future Work: These next steps may be added in a later phase and are based on [previous versions](use_cases_archive/use_cases_v1.md) of the CUJ.*
+*Update: These next steps may be added in a later phase and are based on [previous versions](use_cases_archive/use_cases_v1.md) of the CUJ.*
 9. After each LLM response, the system offers a quick micro-check (MCQ or short answer) to test understanding of the concept just discussed.
-10.  When the student returns to the chat later, the LLM first asks about topics that were mentioned in the last session focusing on problem topics.
+10. When the student returns to the chat later, the LLM first asks about topics that were mentioned in the last session focusing on problem topics.
 
 **UI/UX Sketches:**
-The updated Figma design and details can be found in [Student UI/UX Session 1](uiux/student_uiux_1.md). These designs do not align 1 to 1 with the actual CUJ flow, but they give a good idea of the intended user experience and showcase the basis and evolution of our design. 
-
-### Instructor CUJ 1 — Course Material Upload & Quiz Setup (connected to Student CUJ 2)
-**Statement:** Upload course materials and set up adaptive quizzes that students can access. View quiz results and analytics to identify student misconceptions on course topics.
-
-**User path:**
-1. Instructor opens Quiz Generator → Create a Quiz.
-2. Clicks Upload Slide/Notes and selects a pdf/image file then clicks Ingest File.
-3. System ingests the file (parse → chunk → index) and allows user to click next.
-4. Instructor can then set Quiz title, description, and configure topics (e.g., what subtopics within the slides to focus on).
-5. Instructor can then save, delete, or preview the quiz.
-6. In preview mode, the instructor can generate and view sample questions one at a time, choosing the difficulty and topic for each question.
-7. Once the user is satisfied with the quiz, they can publish it to make it available to students.
-8. All of the quizzes created by the instructor are listed in the Quiz Dashboard, allowing them to edit and manage existing quizzes.
-
-*Future work: The current implementation/UI currently shows a practice and assessment quiz option, but for the MVP phase we will only be implementing the practice quiz functionality connected to Student CUJ 2. In future phases we may implement the assessment quiz option as well, which allows finer control over quiz settings such as time limits, number of attempts, and specific predictable/editable questions. In the future we would also like to allow for multiple sources and formats of course materials to be used for quiz generation (e.g., multiple pdfs, pptx, text/image input).*
-
-**UI/UX Sketches:**
-UI/UX Design Pending and will be added soon.
+The updated Figma design and details can be found in [Student UI/UX Session 1](uiux/student_uiux_1.md). These designs do not align 1 to 1 with the actual CUJ flow, but they give a good idea of the intended user experience and showcase the basis and evolution of our design. An update with the final UI/UX flow will be added soon.
 
 ---
 
-### CUJs in Progress:
-
-### Student CUJ 2 — Start a slide based dynamic practice quiz session
+### Student CUJ 2 — Start a slide based dynamic quiz session
 **Statement:** Choose from instructor uploaded slides/materials and take an adaptive, citation-backed quiz that tests understanding and gives recommended next steps.
 
 **User path:**
-1. Student opens Assessment & Practice Quizzes → selects a quiz from the list of instructor published quizzes.
-2. Loads page showing quiz details (title, description, topics covered) and a list of previous attempts.
-3. When Student clicks Start New Attempt, the system begins a new session and generates the first question from the quiz material/details set by the instructor.
-4. Questions are presented one at a time, as the student answers → system grades instantly, shows a brief explanation with \[slide N] citation, and records correctness.
-5. The quiz adapts: easier/harder items and topic mix adjust based on recent performance.
-6. When the user feels they are done, they can click End Session to see a summary of their performance. This summary and the session is saved to their quiz history.
-7. Based on the summary, the student can then use the chat feature (Student CUJ 1) to study specific topics they struggled with during the quiz and test their understanding further. (This completes the learning → practice → learning loop.)
+1. Student opens Quiz → chooses from the list of available slide decks/materials for the course.
+2. System creates a quiz session and shows Ready to quiz.
+3. Quiz starts with 6–10 items (MCQ + short answer) generated from the slides.
+4. Student answers → system grades instantly, shows a brief explanation with \[slide N] citation, and records correctness + concept tags.
+5. The quiz adapts: easier/harder items and topic mix adjust based on recent performance and concept mastery.
+6. If rolling accuracy drops (e.g., <60% across last 10 items) or repeated misses on a concept, the system recommends Switch to Study Session (Student CUJ 1), listing 3–5 problem topics and linking to the most relevant slides.
+7. Session summary: accuracy by concept, streaks, and next-review steps.
 
-*Future work: The following steps may be added in a later phase and are based on [previous versions](use_cases_archive/use_cases_v1.md) of the CUJ.*
-Direct Quiz to Study Handoff (similar to NotebookLM - see [Competitive CUJ Analysis](comp_cuj/README.md)):
-8. If rolling accuracy drops (e.g., <60% across last 10 items) or repeated misses on a concept, the system recommends Switch to Study Session (Student CUJ 1), listing the problem topic(s) and starting a chat session to focus on those areas.
-  
 **UI/UX Sketches:**
 *Updated UI/UX Design Pending and will be added soon.*
 ![Student CUJ 2](cuj_sketches/cuj2.png)
 
-
-### Instructor CUJ 2 — Diagnose class understanding with Analytics Dashboard v1
-**Statement:** View how students are performing on quizzes and trends in how well they are using the adaptive chat to identify misconceptions, and adjust instruction accordingly.
-
-**User path:**
-1. Instructor opens → Analytics Dashboard shows tiles: quiz stats, chat stats.
-2. Open the Quiz Analytics tab → show and sort results by quiz and performance per topic.
-3. Open the Chat Analytics tab → shows comparison of queries by type (good vs needs_focusing) and trends over time.
-4. Utilizing this information, the instructor can create new practice quizzes to focus student practice on the most challenging topics. Or the instructor can create assessment quizzes to formally evaluate student understanding over a proper spread of strong and weak topics.
-5. Instructor can then use this information externally to adjust course plans (i.e. tutorials) and can recommend topics of study to students during next class.
-
-*Future work: This dashboard is a v1 version and will be expanded in future phases to include more analytics and more in-platform actions for the instructor to take based on the data. Another future addition when more student data is available is the LLM TA feature, which allows instructors to ask natural language questions about class performance and get data-backed answers.*
-
-*Disclaimer: This is the initial UI/UX Sketch and will be updated with the MVP design soon. The design below represents what a version 2 of this CUJ could look like in the future.*
-**UI/UX Sketches:**
-![Instructor CUJ 2](cuj_sketches/cuj4.png)
-
 ---
-
-### Future CUJs:
-
-### Student CUJ 3 — Self-directed Flashcard generation & review
-**Statement:** Generate flashcards from course materials and review them to practice active recall and reinforce learning.
+*Update: Instead of having students upload their own materials, the instructor will provide a curated list of approved course materials for students to choose from. This makes more sense for a classroom setting and ensures students are using the right materials (less of a need for Instructor CUJ 2). It also makes generating the learning analytics and connecting student/instructor sides easier. We will also be focusing on pdf/image based materials in the first phase.*
+### Instructor CUJ 1 — Course Material Upload & Quiz Setup, Results Dashboard (connected to Student CUJ 1 and 2)
+**Statement:** Upload course materials and set up adaptive quizzes that students can access. View quiz results and analytics to identify student misconceptions on course topics.
 
 **User path:**
-1. Student opens Flashcards → Create Flashcards. This view will also contain a list of previously created flashcard decks.
-2. Uploads course material (pdf/pptx) and clicks Ingest File.
-3. System ingests the file (parse → chunk → index) and allows user to click next.
-4. Student can then set Flashcard deck title, description, and optionally configure topics and number of cards.
-5. System generates flashcards (question + answer) from the ingested material and displays them for review.
-6. Student can then start a review session, where flashcards are presented one at a time.
-7. For each flashcard, the student attempts to recall the answer before revealing it. After revealing, the user can mark whether they got it right or wrong.
-8. The system tracks performance and shows flashcards until all were marked correct in a session. Cards that were marked wrong are prioritized for review in subsequent sessions.
-
+1. Instructor opens Course → Create Quiz.
+2. Drags and drops files (PDFs, images) or inputs the course material using a text box. (We will stick with one course material for one quiz session in the first phase.)
+3. System ingests the file (parse → chunk → index) and shows Ready to quiz.
+4. Instructor previews quiz, makes adjustments, and publishes.
+5. Instructor can use Dashboard to see how well students are using the adaptive chat (Student CUJ 1) and quiz (Student CUJ 2) features to identify common misconceptions and adjust instruction accordingly.
+6. Instructor can see the overall performance of different quizzes and identify which topics students are struggling with the most.
+   
 **UI/UX Sketches:**
 UI/UX Design Pending and will be added soon.
 
-### Instructor CUJ 3 — Configure LLM course policies & content scope
+---
+*Update: We will first be working on connecting the instructor and student sides through the quiz mode, so this CUJ may be implemented in a later phase.*
+### Instructor CUJ 2 — Configure LLM policies & content scope
 **Statement:** Set course-level AI policy and choose what knowledge sources are allowed so student help stays on-policy and aligned to instructional goals.
 
 **User path:**
@@ -133,11 +76,25 @@ UI/UX Design Pending and will be added soon.
 3. Chooses Content scope: Course-only, Suggest externals, or Allow externals.
 4. Manages Focus list (notes/FAQs to emphasize) and Deny list (assignments/solutions to exclude).  
    a. Upload specific materials for the above lists.
-5. Runs a policy check/preview (test prompt): graded-work request is blocked; concept help follows friction rules; answers cite only allowed sources. Instructor can iterate on settings based on preview results.
+5. Runs a policy check (test prompt): graded-work request is blocked; concept help follows friction rules; answers cite only allowed sources.
 6. Presses publish updated and pushing policies to the student side.
 
 **UI/UX Sketches:**
 ![Instructor CUJ 1](cuj_sketches/cuj3.png)
+
+---
+*Update: We will likely not have time to implement this CUJ in the first phase, but we will keep it here for future work.*
+### Instructor CUJ 3 — Diagnose class understanding with Analytics + “LLM TA”
+**Statement:** View cohort performance by objective/topic and ask LLM TA questions grounded in students’ quiz/chat responses to identify misconceptions.
+
+**User path:**
+1. Instructor opens Analytics → Dashboard shows tiles: quiz accuracy/completion and top missed objectives.
+2. Open LLM TA pane → ask, e.g., “Why is Objective 2 trending down?” or “What are common confusions about x?”
+3. LLM TA retrieves aggregated class data (quiz outcomes, rubric hits/misses, anonymized excerpts) → returns a summary with evidence, suggested misconceptions, and recommended follow-ups.
+4. Instructor uses information externally to adjust course plans (i.e. tutorials) and can recommend topics of study to students (Depending on time this could be added to the platform).
+
+**UI/UX Sketches:**
+![Instructor CUJ 2](cuj_sketches/cuj4.png)
 
 ---
 
