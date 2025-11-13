@@ -61,7 +61,7 @@ The updated Figma design and details can be found in [Student UI/UX Session 1](u
 *Future work: The current implementation/UI currently shows a practice and assessment quiz option, but for the MVP phase we will only be implementing the practice quiz functionality connected to Student CUJ 2. In future phases we may implement the assessment quiz option as well, which allows finer control over quiz settings such as time limits, number of attempts, and specific predictable/editable questions. In the future we would also like to allow for multiple sources and formats of course materials to be used for quiz generation (e.g., multiple pdfs, pptx, text/image input).*
 
 **UI/UX Sketches:**
-UI/UX Design Pending and will be added soon.
+The updated Figma design and details can be found in [Instructor UI/UX Session 1](uiux/instructor_uiux_1.md). These designs do not align 1 to 1 with the actual CUJ flow, but they give a good idea of the intended user experience and showcase the basis and evolution of our design.
 
 ---
 
