@@ -125,8 +125,17 @@ Session Overview
 - **Screenshots:** See attached screenshots below for session details.
 
 ### Session Screenshots
-Get into the instructor side and go to quiz generator:
-![IUR1](iur1_artifacts/inshomepage.png)
+Instructor homepage:
+![IUR1](iur1_artifacts/1.png)
 Setting up the quiz using own course material:
-![SUR1](sur2_artifacts/1.png)
-
+![SUR1](iur1_artifacts/2.png)
+Upload and Ingesting the course material:
+![IUR3](iur1_artifacts/3.png)
+Configuring the quiz parameters:
+![IUR4](iur1_artifacts/4.png)
+Previewing the generated quiz questions:
+![IUR5](iur1_artifacts/5.png)
+Reviewing the analytics dashboard (Quiz Results):
+![IUR6](iur1_artifacts/6.png)
+Reviewing the analytics dashboard (Chat Results):
+![IUR7](iur1_artifacts/7.png)
