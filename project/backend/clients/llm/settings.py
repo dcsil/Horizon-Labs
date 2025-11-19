@@ -94,6 +94,16 @@ class Settings(BaseModel):
         default=None,
         description="Expected dimensionality of vectors stored in the Pinecone index",
     )
+    max_cached_sessions: int = Field(
+        default=200,
+        ge=0,
+        description="Maximum number of chat sessions to keep in memory (0 disables eviction)",
+    )
+    ingest_batch_size: int = Field(
+        default=64,
+        ge=1,
+        description="Number of chunks to embed/index per batch during ingestion",
+    )
 
 
 @lru_cache
@@ -104,6 +114,14 @@ def get_settings() -> Settings:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is required but missing")
+
+    cache_limit_raw = os.environ.get("LLM_MAX_CACHED_SESSIONS")
+    cache_limit = int(cache_limit_raw) if cache_limit_raw is not None else 200
+    if cache_limit < 0:
+        cache_limit = 0
+    ingest_batch_size = int(os.environ.get("INGEST_BATCH_SIZE", "64"))
+    if ingest_batch_size < 1:
+        ingest_batch_size = 64
 
     return Settings(
         openrouter_api_key=api_key,
@@ -128,4 +146,6 @@ def get_settings() -> Settings:
         pinecone_index_dimension=(
             int(os.environ["PINECONE_INDEX_DIMENSION"]) if os.environ.get("PINECONE_INDEX_DIMENSION") else None
         ),
+        max_cached_sessions=cache_limit,
+        ingest_batch_size=ingest_batch_size,
     )

@@ -25,6 +25,9 @@ export default function StudentHomePage() {
     router.push("/Student/Quizzes");
   };
 
+  const handleFlashcards = () => {
+    router.push("/Student/Flashcards");
+  };
   return (
     <div className="min-h-screen bg-white relative overflow-hidden">
       <div className="flex h-full min-h-screen flex-col xl:flex-row">
@@ -94,14 +97,10 @@ export default function StudentHomePage() {
                     <img src="/Qbubble.png" alt="Quiz" className="w-8 h-8" />
                   </div>
                   <div className="flex-1">
-                    <h2
-                      className={`text-2xl font-bold text-blue-900 mb-2 ${poppins.className}`}
-                    >
+                    <h2 className={`text-2xl font-bold text-blue-900 mb-2 ${poppins.className}`}>
                       Assessment & Practice Quizzes
                     </h2>
-                    <p
-                      className={`text-base text-gray-600 ${poppins.className}`}
-                    >
+                    <p className={`text-base text-gray-600 ${poppins.className}`}>
                       Run timed assessments or adaptive practice sessions built from your course content.
                     </p>
                   </div>
@@ -119,6 +118,49 @@ export default function StudentHomePage() {
                         strokeWidth={2}
                         d="M9 5l7 7-7 7"
                       />
+                    </svg>
+                  </div>
+                </button>
+
+                {/* Flashcards Option */}
+                <button
+                  type="button"
+                  onClick={handleFlashcards}
+                  className="group relative flex flex-col items-start gap-4 p-8 rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200 hover:border-emerald-400 hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                    <svg
+                      className="w-8 h-8"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h2 className={`text-2xl font-bold text-emerald-900 mb-2 ${poppins.className}`}>
+                      Flashcards Lab (Preview)
+                    </h2>
+                    <p className={`text-base text-gray-600 ${poppins.className}`}>
+                      Generate decks from course files and rehearse with active recall.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-emerald-600 font-semibold">
+                    <span className={poppins.className}>Open Flashcards</span>
+                    <svg
+                      className="w-5 h-5 group-hover:translate-x-1 transition-transform"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
                 </button>

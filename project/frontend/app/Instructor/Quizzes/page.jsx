@@ -9,6 +9,9 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
+const heroTitleClasses = `text-4xl font-bold text-gray-900 ${poppins.className}`;
+const heroSubtitleClasses = `text-base text-gray-600 mt-2 ${poppins.className}`;
+
 const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(
   /\/$/,
   ""
@@ -55,7 +58,27 @@ export default function InstructorQuizzesPage() {
 
   const hasQuizzes = quizzes.length > 0;
 
+  const clearDraftState = () => {
+    if (typeof window === "undefined") return;
+    const keys = [
+      "quizConfigDraft",
+      "quizPreviewData",
+      "quizPreviewSession",
+      "quizPreviewQuestions",
+      "quizPreviewResponses",
+    ];
+    for (const key of keys) {
+      try {
+        localStorage.removeItem(key);
+      } catch (error) {
+        console.warn("Unable to clear stored quiz state", error);
+        break;
+      }
+    }
+  };
+
   const handleCreateQuiz = () => {
+    clearDraftState();
     router.push("/Instructor/QuizGenerator");
   };
 
@@ -152,10 +175,8 @@ export default function InstructorQuizzesPage() {
         </button>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className={`text-4xl font-bold text-purple-900 mb-2 ${poppins.className}`}>
-              My Quizzes
-            </h1>
-            <p className={`text-base text-gray-600 ${poppins.className}`}>
+            <h1 className={heroTitleClasses}>My Quizzes</h1>
+            <p className={heroSubtitleClasses}>
               Quizzes will simulate real tests/exams with time limits.
             </p>
           </div>

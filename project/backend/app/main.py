@@ -23,20 +23,26 @@ from clients.quiz import (
 )
 
 from .schemas import (
+    ChatAnalyticsResponse,
     ChatHistoryResponse,
     ChatResetRequest,
     ChatSessionListResponse,
     ChatStreamRequest,
+    QuizAnalyticsResponse,
     QuizAnswerRequest,
     QuizAnswerResponse,
     QuizDefinitionRequest,
     QuizDefinitionResponse,
-    QuizQuestionResponse,
     QuizDifficultyLiteral,
+    QuizQuestionResponse,
+    QuizAttemptReviewResponse,
+    QuizSessionHistoryItem,
+    QuizSessionHistoryResponse,
     QuizSessionResponse,
+    QuizSessionReviewResponse,
     QuizStartRequest,
-    TopicPerformance,
     QuizSummaryResponse,
+    TopicPerformance,
 )
 
 # Set up logging early so LLMService can use it during initialization.
@@ -168,6 +174,25 @@ def chat_sessions(
     sessions = llm_service.list_sessions()
     return ChatSessionListResponse(sessions=sessions)
 
+@app.get("/analytics/chats", response_model=ChatAnalyticsResponse)
+def get_chat_analytics(
+    quiz_id: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> ChatAnalyticsResponse:
+    data = llm_service.get_analytics(quiz_id=quiz_id, user_id=user_id)
+    return ChatAnalyticsResponse(**data)
+
+
+@app.get("/analytics/quizzes", response_model=QuizAnalyticsResponse)
+def get_quiz_analytics(
+    quiz_id: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    quiz_service: QuizService = Depends(get_quiz_service),
+) -> QuizAnalyticsResponse:
+    data = quiz_service.get_quiz_analytics(quiz_id=quiz_id, user_id=user_id)
+    return QuizAnalyticsResponse(**data)
+
 
 @app.get("/debug/friction-state")
 def friction_state(
@@ -275,12 +300,43 @@ def quiz_list_definitions(
     return [_serialize_quiz_definition(record) for record in records]
 
 
+@app.get("/quiz/definitions/{quiz_id}/sessions", response_model=QuizSessionHistoryResponse)
+def quiz_list_sessions(
+    quiz_id: str,
+    user_id: str = Query(..., description="Learner identifier to scope sessions"),
+    limit: int = Query(10, ge=1, le=100, description="Maximum number of sessions to return"),
+    quiz_service: QuizService = Depends(get_quiz_service),
+) -> QuizSessionHistoryResponse:
+    summaries = quiz_service.list_session_history(quiz_id=quiz_id, user_id=user_id, limit=limit)
+    items = [_serialize_history_item(summary) for summary in summaries]
+    return QuizSessionHistoryResponse(sessions=items)
+
+
 @app.delete("/quiz/definitions/{quiz_id}")
-def quiz_delete_definition(
+async def quiz_delete_definition(
     quiz_id: str,
     quiz_service: QuizService = Depends(get_quiz_service),
+    llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, str]:
+    try:
+        definition = quiz_service.get_quiz_definition(quiz_id)
+    except QuizDefinitionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    embedding_document_id = definition.embedding_document_id
     quiz_service.delete_quiz_definition(quiz_id)
+
+    if embedding_document_id:
+        try:
+            await llm_service.delete_document(embedding_document_id)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logging.getLogger("uvicorn.error").warning(
+                "Unable to delete embedding document %s for quiz %s: %s",
+                embedding_document_id,
+                quiz_id,
+                exc,
+            )
+
     return {"status": "deleted", "quiz_id": quiz_id}
 
 
@@ -394,17 +450,42 @@ def quiz_end_session(
     return _serialize_quiz_summary(summary)
 
 
-@app.delete("/quiz/session/{session_id}")
-def quiz_delete_session(
+@app.get("/quiz/session/{session_id}", response_model=QuizSessionReviewResponse)
+def quiz_get_session(
     session_id: str,
+    user_id: str = Query(..., description="Learner identifier requesting the review"),
     quiz_service: QuizService = Depends(get_quiz_service),
-) -> dict[str, str]:
+) -> QuizSessionReviewResponse:
     try:
-        quiz_service.delete_preview_session(session_id)
+        result = quiz_service.get_session_review(session_id, user_id=user_id)
     except QuizSessionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except QuizSessionConflictError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=403, detail=str(exc))
+
+    summary = _serialize_quiz_summary(result["summary"])
+    attempts = [_serialize_attempt_detail(payload) for payload in result.get("attempts", [])]
+    return QuizSessionReviewResponse(summary=summary, attempts=attempts)
+
+
+@app.delete("/quiz/session/{session_id}")
+def quiz_delete_session(
+    session_id: str,
+    user_id: str | None = Query(
+        default=None,
+        description="Provide a learner identifier to delete a completed session; omit for preview sessions.",
+    ),
+    quiz_service: QuizService = Depends(get_quiz_service),
+) -> dict[str, str]:
+    try:
+        if user_id:
+            quiz_service.delete_session_record(session_id, user_id=user_id)
+        else:
+            quiz_service.delete_preview_session(session_id)
+    except QuizSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except QuizSessionConflictError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -460,6 +541,46 @@ def _serialize_quiz_summary(summary: Dict[str, object]) -> QuizSummaryResponse:
         accuracy=float(summary.get("accuracy", 0.0)),
         topics=topics_payload,
         total_time_ms=int(summary.get("total_time_ms", 0)),
+        average_response_ms=summary.get("average_response_ms"),
+        duration_ms=summary.get("duration_ms"),
+        max_correct_streak=int(summary.get("max_correct_streak", 0)),
+        max_incorrect_streak=int(summary.get("max_incorrect_streak", 0)),
         started_at=summary.get("started_at"),
         completed_at=summary.get("completed_at"),
+    )
+
+
+def _serialize_history_item(summary: Dict[str, object]) -> QuizSessionHistoryItem:
+    return QuizSessionHistoryItem(
+        session_id=str(summary.get("session_id")),
+        quiz_id=str(summary.get("quiz_id")),
+        user_id=str(summary.get("user_id")),
+        mode=str(summary.get("mode")),
+        status=str(summary.get("status")),
+        total_questions=int(summary.get("total_questions", 0)),
+        correct_answers=int(summary.get("correct_answers", 0)),
+        accuracy=float(summary.get("accuracy", 0.0)),
+        duration_ms=summary.get("duration_ms"),
+        max_correct_streak=int(summary.get("max_correct_streak", 0)),
+        started_at=summary.get("started_at"),
+        completed_at=summary.get("completed_at"),
+    )
+
+
+def _serialize_attempt_detail(payload: Dict[str, object]) -> QuizAttemptReviewResponse:
+    return QuizAttemptReviewResponse(
+        question_id=str(payload.get("question_id")),
+        prompt=str(payload.get("prompt", "")),
+        choices=list(payload.get("choices", []) or []),
+        topic=str(payload.get("topic", "")),
+        difficulty=str(payload.get("difficulty", "medium")),  # type: ignore[arg-type]
+        selected_answer=str(payload.get("selected_answer", "")),
+        correct_answer=str(payload.get("correct_answer", "")),
+        is_correct=bool(payload.get("is_correct", False)),
+        rationale=payload.get("rationale"),
+        correct_rationale=str(payload.get("correct_rationale", "")),
+        incorrect_rationales=dict(payload.get("incorrect_rationales", {}) or {}),
+        source_metadata=payload.get("source_metadata"),
+        submitted_at=payload.get("submitted_at"),
+        response_ms=payload.get("response_ms"),
     )

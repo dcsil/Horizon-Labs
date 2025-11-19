@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
-from clients.database.chat_repository import InMemoryChatRepository
+from clients.database.chat_repository import (
+    ChatMessageRecord,
+    ChatSessionRecord,
+    InMemoryChatRepository,
+)
 from clients.ingestion import IngestionResult
 from clients.llm.classifier import ClassificationResult
 from clients.llm.service import LLMService
@@ -158,3 +164,82 @@ def test_reset_session_clears_cached_state(monkeypatch: pytest.MonkeyPatch) -> N
     assert session_id not in service._friction_progress
     assert session_id not in service._guidance_ready
     assert session_id not in service._last_classifications
+
+
+def test_get_analytics_summarises_sessions() -> None:
+    settings = _settings_with_pinecone()
+    repository = InMemoryChatRepository()
+    service = LLMService(settings, repository=repository)
+
+    base_time = datetime(2024, 9, 1, 12, 0, tzinfo=timezone.utc)
+
+    session_one = ChatSessionRecord(
+        session_id="session-1",
+        messages=[
+            ChatMessageRecord(
+                role="human",
+                content="Hello coach",
+                created_at=base_time,
+                turn_classification="good",
+            ),
+            ChatMessageRecord(
+                role="ai",
+                content="Hi there",
+                created_at=base_time,
+            ),
+            ChatMessageRecord(
+                role="human",
+                content="Still confused",
+                created_at=base_time + timedelta(days=1),
+                turn_classification="needs_focusing",
+            ),
+        ],
+        friction_progress=0,
+        session_mode="friction",
+        last_prompt="friction",
+    )
+
+    session_two = ChatSessionRecord(
+        session_id="session-2",
+        messages=[
+            ChatMessageRecord(
+                role="human",
+                content="Quick check",
+                created_at=base_time + timedelta(days=2),
+                turn_classification="good",
+            ),
+            ChatMessageRecord(
+                role="ai",
+                content="Sure",
+                created_at=base_time + timedelta(days=2),
+            ),
+        ],
+        friction_progress=0,
+        session_mode="friction",
+        last_prompt="friction",
+    )
+
+    repository.save_session(session_one)
+    repository.save_session(session_two)
+
+    analytics = service.get_analytics()
+
+    assert analytics["session_count"] == 2
+    assert analytics["total_messages"] == len(session_one.messages) + len(session_two.messages)
+    assert analytics["classified_turns"] == 3
+    assert analytics["totals"] == {"good": 2, "needs_focusing": 1}
+    assert analytics["average_turns_per_session"] == 2.5
+    assert analytics["classification_rate"] == pytest.approx(0.6, rel=1e-6)
+
+    sessions = {item["session_id"]: item for item in analytics["sessions"]}
+    first = sessions["session-1"]
+    assert first["good_turns"] == 1
+    assert first["needs_focusing_turns"] == 1
+    second = sessions["session-2"]
+    assert second["good_turns"] == 1
+    assert second["needs_focusing_turns"] == 0
+
+    trend = {point["date"]: point for point in analytics["daily_trend"]}
+    assert trend["2024-09-01"]["good"] == 1
+    assert trend["2024-09-02"]["needs_focusing"] == 1
+    assert trend["2024-09-03"]["good"] == 1

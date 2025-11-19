@@ -9,6 +9,9 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
+const heroTitleClasses = `text-4xl font-bold text-gray-900 ${poppins.className}`;
+const heroSubtitleClasses = `text-base text-gray-600 mt-2 ${poppins.className}`;
+
 const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const QUIZ_DEFINITIONS_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
@@ -35,7 +38,16 @@ const Section = ({ title, description, quizzes, emptyMessage, onSelect }) => (
               {quiz.name || "Untitled Quiz"}
             </h3>
             <p className={`text-sm text-gray-600 mb-3 ${poppins.className}`}>
-              {(quiz.metadata?.description || "Instructor will provide details before launch.").slice(0, 120)}
+              {(() => {
+                const metadata = quiz.metadata || {};
+                const description =
+                  typeof metadata.description === "string" ? metadata.description.trim() : "";
+                const fallbackDescription =
+                  quiz.default_mode === "assessment"
+                    ? "Quiz generated from your course material."
+                    : "Practice quiz generated from your course material.";
+                return (description || fallbackDescription).slice(0, 120);
+              })()}
             </p>
             <div className="flex flex-wrap gap-3 text-xs text-gray-500">
               {quiz.source_filename ? (
@@ -124,8 +136,8 @@ export default function StudentQuizzesPage() {
           </button>
         </div>
         <div>
-          <h1 className={`text-4xl font-bold text-gray-900 ${poppins.className}`}>Your Quizzes</h1>
-          <p className={`text-base text-gray-600 mt-2 ${poppins.className}`}>
+          <h1 className={heroTitleClasses}>Your Quizzes</h1>
+          <p className={heroSubtitleClasses}>
             Choose from instructor-published assessments or practice sessions tailored to your course.
           </p>
         </div>
@@ -146,7 +158,7 @@ export default function StudentQuizzesPage() {
               title="Assessment Quizzes"
               description="Timed assessments curated by your instructor."
               quizzes={assessments}
-              emptyMessage="No assessment quizzes are published yet."
+              emptyMessage="Assessment mode is coming soon."
               onSelect={handleSelectQuiz}
             />
             <Section
