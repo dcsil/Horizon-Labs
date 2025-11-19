@@ -1,4 +1,4 @@
-# Student User Research Session – Core Student User Journey 1
+# Student User Research Session – Core Student User Journey 2
 
 ## Session Overview
 - **Researcher:** Samuel Ruo
@@ -74,7 +74,7 @@
 - **Prompt given:** Take the practice quiz generated from your music theory course material. (Will lead the user in switching sides as this is not an expected common flow for users.)
 - **Expected outcome:** E.R successfully starts the quiz session, the system continuously generates questions, and E.R answers them while receiving feedback.
 - **Actual path taken:** Started quiz session, answered questions, however had to check slides a few times to confirm questions and answers were correct.
-- **Time on task (if tracked):** 30 mins.
+- **Time on task (if tracked):** 25-30 mins.
 - **Direct quotes / notable reactions:** "I don't think this questions is competely correct based on what I studied, but it's close." "I like that I get immediate feedback on my answers." "This question is not accurate based on the slides and isn't really relevant to what I need to study." "Having infinite questions is great for practice, I can keep going until I feel confident."
 - **Usability issues or friction points:** 
   - Generation is long at the start of the quiz, may cause user to reload the page or think something is wrong.
@@ -95,7 +95,7 @@
 - **Expected outcome:** End the quiz session, go back to home page, navigate back to the quiz, and review your past results.
 - **Actual path taken:** Same as expected.
 - **Time on task (if tracked):** 5 mins.
-- **Direct quotes / notable reactions:** 
+- **Direct quotes / notable reactions:** "Having a summary of my performance is really useful, I can see where I need to focus my studies." "It would be great if I could get more detailed analytics on my performance over time."
 - **Usability issues or friction points:** 
 - **Unmet needs or feature requests:**
   - In future if quiz could analyze and give info on tendencies (i.e. topics frequently missed) that would be useful for study planning.
@@ -104,33 +104,39 @@
 - **Overall satisfaction (verbatim + inferred rating):** "Some parts were a bit inconsistent which posed some frustration, but overall I can see this being a really useful tool for practicing concepts outside of class." (3.75/5)
 - **Biggest pain point:** Inaccuracies with the citations.
 - **Favorite moment / value highlight:** Simplified quiz creation. Low effort for infinite practice questions.
-- **Suggestions from participant:** Listed in previous sections.
-- **Additional questions asked:** 
+- **Suggestions from participant:** Listed in previous sections. (Mainly in Task 2).
+- **Additional questions asked:** N/A
 
 ## Researcher Reflections
 - **Key insights:** 
-- **Surprises vs. hypotheses:** 
-- **Impact on roadmap (priority, scope, timing):**
-- **Follow-up actions / owners:** 
-  -
+  - The quiz feature shows strong potential as a practice tool, but accuracy and relevance of questions are crucial for user trust and satisfaction.
+  - Users may benefit from more control over question generation to ensure alignment with their study needs.
+  - Immediate feedback is highly valued, reinforcing the learning process.
+- **Surprises vs. hypotheses:**  
+  - H1 was mostly confirmed; E.R found the interface intuitive with minimal guidance.
+  - H2 was partially confirmed; while the quiz reinforced learning, some question inaccuracies hindered the experience.
+  - H3 was partially confirmed; E.R could answer many questions correctly but struggled with some due to relevance issues.
+- **Impact on roadmap (priority, scope, timing):** We likely do not have the time to implement or make significant changes before MVP, but these findings will inform post-MVP improvements. Focus areas include enhancing question relevance, improving citation accuracy, and adding more user controls for quiz generation.
 
 ## Artifacts
 - **Screenshots:** See attached screenshots below for session details.
 
 ### Session Screenshots
-Starting new session and initial question:
-![SUR1](sur1_artifacts/sur1.png)
-Answering the follow up question, utilizing friction mode:
-![SUR2](sur1_artifacts/sur2.png)
-User Prompt Feedback:
-![SUR3](sur1_artifacts/sur3.png)
-Session Diagnostics section:
-![SUR4](sur1_artifacts/sur4.png)
-Guidance mode activated:
-![SUR5](sur1_artifacts/sur5.png)
-Guidance mode toggle:
-![SUR6](sur1_artifacts/sur6.png)
-Summary of the session:
-![SUR7](sur1_artifacts/sur7.png)
-Rephrase of previous answer:
-![SUR8](sur1_artifacts/sur8.png)
+Setting up the quiz using own course material (instructor side):
+![SUR1](sur2_artifacts/1.png)
+Switching to student side to take the quiz:
+![SUR2](sur2_artifacts/2.png)
+Navigating to the created quiz:
+![SUR3](sur2_artifacts/3.png)
+Starting new attempt, creating a new session:
+![SUR4](sur2_artifacts/4.png)
+Generating and receiving quiz questions:
+![SUR5](sur2_artifacts/5.png)
+Receiving instant feedback and citations:
+![SUR6](sur2_artifacts/6.png)
+Ending session and seeing summary of performance:
+![SUR7](sur2_artifacts/7.png)
+Reviewing results:
+![SUR8](sur2_artifacts/8.png)
+Saved in past attempts for future review:
+![SUR9](sur2_artifacts/9.png)
