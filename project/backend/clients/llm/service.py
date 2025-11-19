@@ -495,6 +495,98 @@ class LLMService:
             )
         return payload
 
+    def get_analytics(
+        self,
+        *,
+        quiz_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        # quiz_id and user_id parameters are reserved for future filtering
+        # when session metadata captures these associations.
+        try:
+            summaries = self._repository.list_sessions()
+        except Exception:
+            logger.exception("Failed listing chat sessions for analytics")
+            raise
+
+        totals = {"good": 0, "needs_focusing": 0}
+        trend_counts: DefaultDict[str, Dict[str, int]] = defaultdict(lambda: {"good": 0, "needs_focusing": 0})
+        session_payload: List[Dict[str, Any]] = []
+        total_messages = 0
+        classified_turns = 0
+
+        for summary in summaries:
+            try:
+                record = self._repository.load_session(summary.session_id)
+            except Exception:
+                logger.exception("Failed loading session %s for analytics", summary.session_id)
+                continue
+            if record is None:
+                continue
+
+            message_count = len(record.messages)
+            total_messages += message_count
+            good_turns = 0
+            needs_turns = 0
+
+            for entry in record.messages:
+                if entry.role != "human":
+                    continue
+                label = entry.turn_classification
+                if label not in ("good", "needs_focusing"):
+                    continue
+                classified_turns += 1
+                if label == "good":
+                    good_turns += 1
+                    totals["good"] += 1
+                else:
+                    needs_turns += 1
+                    totals["needs_focusing"] += 1
+
+                day_key = entry.created_at.astimezone(timezone.utc).date().isoformat()
+                bucket = trend_counts[day_key]
+                bucket[label] += 1
+
+            session_payload.append(
+                {
+                    "session_id": summary.session_id,
+                    "turns": message_count,
+                    "classified_turns": good_turns + needs_turns,
+                    "good_turns": good_turns,
+                    "needs_focusing_turns": needs_turns,
+                    "last_activity_at": summary.updated_at,
+                }
+            )
+
+        session_payload.sort(key=lambda item: item["last_activity_at"], reverse=True)
+        session_count = len(session_payload)
+        average_turns = round(total_messages / session_count, 2) if session_count else 0.0
+        classification_rate = round(classified_turns / total_messages, 2) if total_messages else 0.0
+
+        daily_trend = []
+        for day_key in sorted(trend_counts.keys()):
+            counts = trend_counts[day_key]
+            total_for_day = counts["good"] + counts["needs_focusing"]
+            daily_trend.append(
+                {
+                    "date": day_key,
+                    "good": counts["good"],
+                    "needs_focusing": counts["needs_focusing"],
+                    "total": total_for_day,
+                }
+            )
+
+        return {
+            "session_count": session_count,
+            "total_messages": total_messages,
+            "classified_turns": classified_turns,
+            "totals": totals,
+            "daily_trend": daily_trend,
+            "sessions": session_payload,
+            "average_turns_per_session": average_turns,
+            "classification_rate": classification_rate,
+        }
+
     def reset_session(self, session_id: str) -> None:
         try:
             self._repository.delete_session(session_id)

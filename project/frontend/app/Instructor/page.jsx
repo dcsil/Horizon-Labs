@@ -22,6 +22,10 @@ export default function InstructorPage() {
     router.push("/Instructor/Quizzes");
   };
 
+  const handleDashboard = () => {
+    router.push("/Instructor/Dashboard");
+  };
+
   return (
     <div className="min-h-screen bg-white relative overflow-hidden">
       <div className="flex h-full min-h-screen flex-col xl:flex-row">
@@ -68,6 +72,43 @@ export default function InstructorPage() {
                   </div>
                   <div className="flex items-center gap-2 text-purple-600 font-semibold">
                     <span className={poppins.className}>Start Creating</span>
+                    <svg
+                      className="w-5 h-5 group-hover:translate-x-1 transition-transform"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleDashboard}
+                  className="group relative flex flex-col items-start gap-4 p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-400 hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                    <img src="/Qbubble.png" alt="Analytics Dashboard" className="w-8 h-8" />
+                  </div>
+                  <div className="flex-1">
+                    <h2
+                      className={`text-2xl font-bold text-blue-900 mb-2 ${poppins.className}`}
+                    >
+                      Analytics Dashboard
+                    </h2>
+                    <p
+                      className={`text-base text-gray-600 ${poppins.className}`}
+                    >
+                      Monitor student quiz results and surface insights to guide instruction.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-blue-600 font-semibold">
+                    <span className={poppins.className}>View Dashboard</span>
                     <svg
                       className="w-5 h-5 group-hover:translate-x-1 transition-transform"
                       fill="none"

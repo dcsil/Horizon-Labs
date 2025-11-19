@@ -23,16 +23,18 @@ from clients.quiz import (
 )
 
 from .schemas import (
+    ChatAnalyticsResponse,
     ChatHistoryResponse,
     ChatResetRequest,
     ChatSessionListResponse,
     ChatStreamRequest,
+    QuizAnalyticsResponse,
     QuizAnswerRequest,
     QuizAnswerResponse,
     QuizDefinitionRequest,
     QuizDefinitionResponse,
-    QuizQuestionResponse,
     QuizDifficultyLiteral,
+    QuizQuestionResponse,
     QuizAttemptReviewResponse,
     QuizSessionHistoryItem,
     QuizSessionHistoryResponse,
@@ -171,6 +173,25 @@ def chat_sessions(
     """Return all known chat sessions."""
     sessions = llm_service.list_sessions()
     return ChatSessionListResponse(sessions=sessions)
+
+@app.get("/analytics/chats", response_model=ChatAnalyticsResponse)
+def get_chat_analytics(
+    quiz_id: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    llm_service: LLMService = Depends(get_llm_service),
+) -> ChatAnalyticsResponse:
+    data = llm_service.get_analytics(quiz_id=quiz_id, user_id=user_id)
+    return ChatAnalyticsResponse(**data)
+
+
+@app.get("/analytics/quizzes", response_model=QuizAnalyticsResponse)
+def get_quiz_analytics(
+    quiz_id: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    quiz_service: QuizService = Depends(get_quiz_service),
+) -> QuizAnalyticsResponse:
+    data = quiz_service.get_quiz_analytics(quiz_id=quiz_id, user_id=user_id)
+    return QuizAnalyticsResponse(**data)
 
 
 @app.get("/debug/friction-state")

@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
+
+from clients.database.quiz_repository import (
+    QuizAttemptRecord,
+    QuizDefinitionRecord,
+    QuizQuestionRecord,
+    QuizSessionRecord,
+)
 
 
 async def _create_quiz_definition(async_client, quiz_id: str, topics: list[str]) -> None:

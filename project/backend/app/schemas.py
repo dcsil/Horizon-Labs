@@ -228,6 +228,67 @@ class QuizAnswerResponse(BaseModel):
     summary: Optional[QuizSummaryResponse] = None
 
 
+class ChatClassificationTotals(BaseModel):
+    good: int = Field(..., ge=0, description="Count of learner turns labelled 'good'")
+    needs_focusing: int = Field(..., ge=0, description="Count of learner turns labelled 'needs_focusing'")
+
+
+class ChatTrendPoint(BaseModel):
+    date: str = Field(..., description="UTC date bucket in YYYY-MM-DD format")
+    good: int = Field(..., ge=0, description="Number of good turns on this date")
+    needs_focusing: int = Field(..., ge=0, description="Number of needs_focusing turns on this date")
+    total: int = Field(..., ge=0, description="Total classified turns on this date")
+
+
+class ChatSessionAnalytics(BaseModel):
+    session_id: str = Field(..., description="Unique chat session identifier")
+    turns: int = Field(..., ge=0, description="Total messages in the session")
+    classified_turns: int = Field(..., ge=0, description="Learner turns with classifier output")
+    good_turns: int = Field(..., ge=0, description="Learner turns classified as good")
+    needs_focusing_turns: int = Field(..., ge=0, description="Learner turns classified as needs focusing")
+    last_activity_at: datetime = Field(..., description="Timestamp of the most recent persisted update")
+
+
+class ChatAnalyticsResponse(BaseModel):
+    session_count: int = Field(..., ge=0, description="Number of chat sessions considered")
+    total_messages: int = Field(..., ge=0, description="Total persisted chat messages across sessions")
+    classified_turns: int = Field(..., ge=0, description="Total learner turns with a classification")
+    totals: ChatClassificationTotals = Field(..., description="Aggregate classification counts")
+    daily_trend: List[ChatTrendPoint] = Field(..., description="Per-day trend of learner classifications")
+    sessions: List[ChatSessionAnalytics] = Field(..., description="Per-session analytics breakdown")
+    average_turns_per_session: float = Field(..., ge=0, description="Average message count per session")
+    classification_rate: float = Field(..., ge=0, description="Fraction of messages that are classified learner turns")
+
+
+class QuizTopicInsight(BaseModel):
+    topic: str = Field(..., description="Topic name")
+    attempted: int = Field(..., ge=0, description="Number of attempts for this topic")
+    correct: int = Field(..., ge=0, description="Number of correct answers for this topic")
+    accuracy: float = Field(..., ge=0, description="Ratio of correct answers to attempts")
+
+
+class QuizAnalyticsSummary(BaseModel):
+    quiz_id: str = Field(..., description="Quiz identifier")
+    name: Optional[str] = Field(default=None, description="Human-friendly quiz name")
+    total_sessions: int = Field(..., ge=0, description="Total learner sessions for this quiz")
+    completed_sessions: int = Field(..., ge=0, description="Sessions completed by learners")
+    in_progress_sessions: int = Field(..., ge=0, description="Sessions still in progress")
+    unique_learners: int = Field(..., ge=0, description="Unique learners who have attempted the quiz")
+    average_accuracy: float = Field(..., ge=0, description="Average accuracy across sessions")
+    average_questions: float = Field(..., ge=0, description="Average number of questions per session")
+    average_response_ms: int = Field(..., ge=0, description="Average response time in milliseconds")
+    last_session_at: Optional[datetime] = Field(default=None, description="Timestamp of the latest session activity")
+    topics: List[QuizTopicInsight] = Field(default_factory=list, description="Topic performance for this quiz")
+
+
+class QuizAnalyticsResponse(BaseModel):
+    total_sessions: int = Field(..., ge=0, description="Total learner quiz sessions considered")
+    unique_learners: int = Field(..., ge=0, description="Unique learners across all quizzes")
+    average_accuracy: float = Field(..., ge=0, description="Average accuracy across all sessions")
+    average_questions: float = Field(..., ge=0, description="Average questions attempted per session")
+    average_response_ms: int = Field(..., ge=0, description="Average response time across sessions")
+    quizzes: List[QuizAnalyticsSummary] = Field(default_factory=list, description="Per-quiz analytics summaries")
+    overall_topics: List[QuizTopicInsight] = Field(default_factory=list, description="Topic-level performance across all quizzes")
 class QuizSessionHistoryItem(BaseModel):
     session_id: str
     quiz_id: str

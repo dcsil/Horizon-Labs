@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import uuid
+from collections import defaultdict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -978,6 +979,176 @@ class QuizService:
         if not record.is_preview:
             raise QuizSessionConflictError("Only preview sessions can be deleted via this endpoint.")
         self._cleanup_preview(record)
+
+    def list_sessions(
+        self,
+        *,
+        quiz_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> List[QuizSessionRecord]:
+        return self._repository.list_sessions(quiz_id=quiz_id, user_id=user_id)
+
+    def get_quiz_analytics(
+        self,
+        *,
+        quiz_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, object]:
+        definitions = {
+            record.quiz_id: record
+            for record in self._repository.list_quiz_definitions()
+        }
+
+        sessions = self._repository.list_sessions(quiz_id=quiz_id, user_id=user_id)
+        aggregated: Dict[str, Dict[str, object]] = {}
+        overall_topics = defaultdict(lambda: {"attempted": 0, "correct": 0})
+        unique_learners: set[str] = set()
+        effective_sessions: List[QuizSessionRecord] = []
+
+        for record in sessions:
+            if record.is_preview:
+                continue
+            effective_sessions.append(record)
+            unique_learners.add(record.user_id)
+            summary = self._build_summary(record)
+            quiz_key = record.quiz_id
+            meta = aggregated.setdefault(
+                quiz_key,
+                {
+                    "quiz_id": quiz_key,
+                    "name": None,
+                    "total_sessions": 0,
+                    "completed_sessions": 0,
+                    "in_progress_sessions": 0,
+                    "unique_learners": set(),
+                    "accuracy_sum": 0.0,
+                    "question_sum": 0,
+                    "correct_sum": 0,
+                    "time_sum": 0,
+                    "latest_session_at": None,
+                    "topics": defaultdict(lambda: {"attempted": 0, "correct": 0}),
+                },
+            )
+
+            if meta["name"] is None and quiz_key in definitions:
+                meta["name"] = definitions[quiz_key].name
+
+            meta["total_sessions"] += 1
+            if record.status == "completed":
+                meta["completed_sessions"] += 1
+            if record.status == "in_progress":
+                meta["in_progress_sessions"] += 1
+            meta["unique_learners"].add(record.user_id)  # type: ignore[assignment]
+
+            meta["accuracy_sum"] += float(summary.get("accuracy", 0.0))
+            meta["question_sum"] += int(summary.get("total_questions", 0))
+            meta["correct_sum"] += int(summary.get("correct_answers", 0))
+            meta["time_sum"] += int(summary.get("total_time_ms", 0))
+
+            candidate_time = record.completed_at or record.started_at
+            latest = meta["latest_session_at"]
+            if latest is None or (candidate_time and candidate_time > latest):
+                meta["latest_session_at"] = candidate_time
+
+            topics = summary.get("topics", {}) or {}
+            for topic, stats in topics.items():
+                attempts = int(stats.get("attempted", 0))
+                correct = int(stats.get("correct", 0))
+                topic_bucket = meta["topics"][topic]
+                topic_bucket["attempted"] += attempts
+                topic_bucket["correct"] += correct
+                overall_bucket = overall_topics[topic]
+                overall_bucket["attempted"] += attempts
+                overall_bucket["correct"] += correct
+
+        total_sessions = len(effective_sessions)
+        if total_sessions == 0:
+            return {
+                "total_sessions": 0,
+                "unique_learners": 0,
+                "average_accuracy": 0.0,
+                "average_questions": 0.0,
+                "average_response_ms": 0,
+                "quizzes": [],
+                "overall_topics": [],
+            }
+
+        quizzes_payload: List[Dict[str, object]] = []
+        total_accuracy_sum = 0.0
+        total_time_sum = 0
+        total_question_sum = 0
+
+        for quiz_key, meta in aggregated.items():
+            total_accuracy_sum += meta["accuracy_sum"]  # type: ignore[arg-type]
+            total_time_sum += meta["time_sum"]  # type: ignore[arg-type]
+            total_question_sum += meta["question_sum"]  # type: ignore[arg-type]
+
+            session_count = meta["total_sessions"]  # type: ignore[assignment]
+            accuracy_avg = round(meta["accuracy_sum"] / session_count, 2) if session_count else 0.0  # type: ignore[arg-type]
+            questions_avg = round(meta["question_sum"] / session_count, 2) if session_count else 0.0  # type: ignore[arg-type]
+            time_avg = int(meta["time_sum"] / session_count) if session_count else 0  # type: ignore[arg-type]
+
+            topics_payload: List[Dict[str, object]] = []
+            for topic, stats in meta["topics"].items():  # type: ignore[assignment]
+                attempted = stats["attempted"]
+                correct = stats["correct"]
+                accuracy = round((correct / attempted) if attempted else 0.0, 2)
+                topics_payload.append(
+                    {
+                        "topic": topic,
+                        "attempted": attempted,
+                        "correct": correct,
+                        "accuracy": accuracy,
+                    }
+                )
+            topics_payload.sort(key=lambda item: item["attempted"], reverse=True)
+
+            quizzes_payload.append(
+                {
+                    "quiz_id": quiz_key,
+                    "name": meta["name"],
+                    "total_sessions": session_count,
+                    "completed_sessions": meta["completed_sessions"],
+                    "in_progress_sessions": meta["in_progress_sessions"],
+                    "unique_learners": len(meta["unique_learners"]),  # type: ignore[arg-type]
+                    "average_accuracy": accuracy_avg,
+                    "average_questions": questions_avg,
+                    "average_response_ms": time_avg,
+                    "last_session_at": meta["latest_session_at"],
+                    "topics": topics_payload,
+                }
+            )
+
+        quizzes_payload.sort(key=lambda item: item["total_sessions"], reverse=True)
+
+        overall_topics_payload: List[Dict[str, object]] = []
+        for topic, stats in overall_topics.items():
+            attempted = stats["attempted"]
+            correct = stats["correct"]
+            accuracy = round((correct / attempted) if attempted else 0.0, 2)
+            overall_topics_payload.append(
+                {
+                    "topic": topic,
+                    "attempted": attempted,
+                    "correct": correct,
+                    "accuracy": accuracy,
+                }
+            )
+        overall_topics_payload.sort(key=lambda item: item["attempted"], reverse=True)
+
+        average_accuracy = round(total_accuracy_sum / total_sessions, 2) if total_sessions else 0.0
+        average_questions = round(total_question_sum / total_sessions, 2) if total_sessions else 0.0
+        average_response_ms = int(total_time_sum / total_sessions) if total_sessions else 0
+
+        return {
+            "total_sessions": total_sessions,
+            "unique_learners": len(unique_learners),
+            "average_accuracy": average_accuracy,
+            "average_questions": average_questions,
+            "average_response_ms": average_response_ms,
+            "quizzes": quizzes_payload,
+            "overall_topics": overall_topics_payload,
+        }
 
     def _load_session(self, session_id: str) -> QuizSessionRecord:
         record = self._repository.load_session(session_id)
