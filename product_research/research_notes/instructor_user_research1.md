@@ -125,6 +125,8 @@ Session Overview
 - **Screenshots:** See attached screenshots below for session details.
 
 ### Session Screenshots
-Setting up the quiz using own course material (instructor side):
+Get into the instructor side and go to quiz generator:
+![IUR1](iur1_artifacts/inshomepage.png)
+Setting up the quiz using own course material:
 ![SUR1](sur2_artifacts/1.png)
 
