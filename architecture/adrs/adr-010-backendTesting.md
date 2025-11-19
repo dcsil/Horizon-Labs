@@ -13,11 +13,11 @@ Our backend requires a unified testing framework that supports both fast unit te
 **BDD frameworks (Behave/Cucumber):** Human-readable specs; heavy for service-level tests and poor fit for repository-level logic.
 
 ### Decision
-We chose pytest as the backend testing framework because it provides simple test discovery, fixtures, parametrization, and clear assertions. We use pytest-asyncio for async FastAPI routes and pytest-cov for terminal and XML coverage reports, with optional plugins (e.g., pytest-recording, pytest-socket, syrupy, pytest-benchmark, codspeed) available when needed. All tests run using a single command:
-
+We chose pytest as the backend testing framework because it provides simple test discovery, fixtures, parametrization, and clear assertions. We use pytest-asyncio for async FastAPI routes and pytest-cov for terminal and XML coverage reports, with optional plugins (e.g., pytest-recording, pytest-socket, syrupy, pytest-benchmark, codspeed) available when needed. 
+All tests run using a single command:
+```
 pytest --cov=app --cov=clients --cov=tests --cov-report=term-missing --cov-report=xml
-
-
+```
 GitHub Actions runs this command on every backend push/PR and uploads the resulting coverage.xml as an artifact.
 
 ### Status
