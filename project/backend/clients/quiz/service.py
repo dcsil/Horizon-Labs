@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import random
 import uuid
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from clients.database.quiz_repository import (
     DifficultyLevel,
@@ -68,7 +69,8 @@ class QuizService:
         self._increase_threshold = max(self._settings.practice_increase_streak, 1)
         self._decrease_threshold = max(self._settings.practice_decrease_streak, 1)
         self._generator = generator or self._select_generator()
-        self._context_retriever = context_retriever or self._select_retriever()
+        self._context_retriever = context_retriever
+        self._retriever_failed = False
         self._coverage_threshold = getattr(self._settings, "slide_coverage_threshold", 0.7)
         self._retriever_sample_size = getattr(self._settings, "retriever_context_sample_size", 4)
         self._retriever_top_k = getattr(self._settings, "retriever_top_k", 20)
@@ -82,7 +84,7 @@ class QuizService:
     def upsert_quiz_definition(
         self,
         *,
-        quiz_id: str,
+        quiz_id: Optional[str],
         name: Optional[str],
         topics: List[str],
         default_mode: QuizMode,
@@ -102,10 +104,12 @@ class QuizService:
         if default_mode not in ("assessment", "practice"):
             raise QuizGenerationError("Unsupported default mode.")
 
-        existing = self._repository.load_quiz_definition(quiz_id)
+        quiz_id_value = (quiz_id or "").strip() or uuid.uuid4().hex
+
+        existing = self._repository.load_quiz_definition(quiz_id_value)
         created_at = existing.created_at if existing else datetime.now(timezone.utc)
         record = QuizDefinitionRecord(
-            quiz_id=quiz_id,
+            quiz_id=quiz_id_value,
             name=name,
             topics=cleaned_topics,
             default_mode=default_mode,
@@ -169,6 +173,10 @@ class QuizService:
             if definition.assessment_time_limit_minutes:
                 deadline = now + timedelta(minutes=definition.assessment_time_limit_minutes)
 
+        session_topics = list(definition.topics or ["General"])
+        if len(session_topics) > 1:
+            random.shuffle(session_topics)
+
         record = QuizSessionRecord(
             session_id=session_id,
             quiz_id=quiz_id,
@@ -179,7 +187,7 @@ class QuizService:
             correct_streak=0,
             incorrect_streak=0,
             attempts_used=0,
-            topics=definition.topics,
+            topics=session_topics,
             asked_question_ids=[],
             active_question_id=None,
             active_question_served_at=None,
@@ -194,6 +202,12 @@ class QuizService:
             questions_since_review=0,
             total_slide_count=self._extract_total_slide_count(definition.metadata),
             coverage_cycle=0,
+            topic_cursor=0,
+            next_question_source="existing",
+            max_correct_streak=0,
+            max_incorrect_streak=0,
+            summary={},
+            queued_question_id=None,
         )
         self._repository.save_session(record)
         return record
@@ -224,32 +238,76 @@ class QuizService:
             )
             record = replace(record, active_question_id=None, active_question_served_at=None)
 
-        review_question, record = self._serve_missed_question_if_ready(record)
+        review_question: Optional[QuizQuestionRecord] = None
+        if not record.is_preview:
+            review_question, record = self._serve_missed_question_if_ready(record)
         if review_question is not None:
             return review_question
 
         definition = self.get_quiz_definition(record.quiz_id)
         question_bank = self._repository.list_quiz_questions(record.quiz_id)
         seen = set(record.asked_question_ids)
-        selected: Optional[QuizQuestionRecord] = None
+        available_existing = [
+            q
+            for q in question_bank
+            if q.question_id not in seen and q.question_id != record.queued_question_id
+        ]
+        if len(available_existing) > 1:
+            random.shuffle(available_existing)
 
-        if not record.is_preview:
-            for question in question_bank:
-                if question.question_id not in seen:
-                    selected = question
-                    break
-
+        target_topic, next_cursor, override_supplied = self._resolve_topic(record, definition, topic_override)
         effective_difficulty = difficulty_override or record.current_difficulty
-        if selected is None:
-            selected, record = self._create_question(
-                record,
-                definition,
-                question_bank,
-                topic_override=topic_override,
-                difficulty_override=effective_difficulty,
+
+        selected: Optional[QuizQuestionRecord] = None
+        used_existing = False
+        queued_selected = False
+
+        if record.queued_question_id:
+            queued_question = next(
+                (q for q in question_bank if q.question_id == record.queued_question_id),
+                None,
             )
+            if queued_question is None:
+                queued_question = self._repository.get_quiz_question(
+                    record.queued_question_id,
+                    quiz_id=record.quiz_id,
+                )
+            if queued_question is not None:
+                selected = queued_question
+                queued_selected = True
+                question_bank = [
+                    q for q in question_bank if q.question_id != queued_question.question_id
+                ]
+                record = replace(record, queued_question_id=None)
+            else:
+                record = replace(record, queued_question_id=None)
+
+        if selected is None:
+            should_use_existing = (
+                not record.is_preview
+                and record.next_question_source == "existing"
+                and bool(available_existing)
+            )
+
+            if should_use_existing:
+                selected = self._select_existing_question(available_existing, preferred_topic=target_topic)
+                if selected is not None:
+                    used_existing = True
+
+            if selected is None:
+                selected, record = self._create_question(
+                    record,
+                    definition,
+                    question_bank,
+                    topic_override=target_topic,
+                    difficulty_override=effective_difficulty,
+                )
+                available_existing = [q for q in available_existing if q.question_id != selected.question_id]
+            else:
+                record = self._register_slide_usage(record, selected)
+                available_existing = [q for q in available_existing if q.question_id != selected.question_id]
         else:
-            record = self._register_slide_usage(record, selected)
+            available_existing = [q for q in available_existing if q.question_id != selected.question_id]
 
         now = datetime.now(timezone.utc)
         next_difficulty_state = record.current_difficulty
@@ -261,6 +319,13 @@ class QuizService:
             if selected.question_id not in preview_question_ids:
                 preview_question_ids = [*preview_question_ids, selected.question_id]
 
+        next_cursor_value = record.topic_cursor if override_supplied else next_cursor
+        next_source_value = self._determine_next_question_source(
+            record,
+            used_existing and not queued_selected,
+            available_existing,
+        )
+
         updated_record = replace(
             record,
             asked_question_ids=[*record.asked_question_ids, selected.question_id],
@@ -269,8 +334,16 @@ class QuizService:
             current_difficulty=next_difficulty_state,
             preview_question_ids=preview_question_ids,
             questions_since_review=record.questions_since_review + 1,
+            topic_cursor=next_cursor_value,
+            next_question_source=next_source_value,
         )
         self._repository.save_session(updated_record)
+        updated_record = self._maybe_queue_generated_question(
+            updated_record,
+            definition,
+            next_source_value=next_source_value,
+            next_cursor_value=next_cursor_value,
+        )
         return selected
 
     def submit_answer(
@@ -342,6 +415,9 @@ class QuizService:
             else:
                 correct_streak = 0
 
+        max_correct_streak = self._calculate_max_streak(attempts, target_correct=True)
+        max_incorrect_streak = self._calculate_max_streak(attempts, target_correct=False)
+
         updated_record = replace(
             record,
             attempts=attempts,
@@ -352,6 +428,8 @@ class QuizService:
             active_question_id=None,
             active_question_served_at=None,
             missed_question_ids=missed_question_ids,
+            max_correct_streak=max_correct_streak,
+            max_incorrect_streak=max_incorrect_streak,
         )
 
         # Assessment termination checks
@@ -371,6 +449,11 @@ class QuizService:
             if not completed and updated_record.deadline and datetime.now(timezone.utc) > updated_record.deadline:
                 updated_record = self._mark_completed(updated_record, status="timed_out")
 
+        summary_payload = None
+        if updated_record.status != "in_progress":
+            summary_payload = self._build_summary(updated_record)
+            updated_record = replace(updated_record, summary=summary_payload)
+
         self._repository.save_session(updated_record)
 
         response: Dict[str, object] = {
@@ -387,19 +470,72 @@ class QuizService:
             "current_difficulty": updated_record.current_difficulty,
             "response_ms": response_ms,
         }
-        if response["session_completed"]:
-            response["summary"] = self._build_summary(updated_record)
+        if summary_payload is not None:
+            response["summary"] = summary_payload
         return response
 
     def end_session(self, session_id: str) -> Dict[str, object]:
         record = self._load_session(session_id)
-        if record.status == "in_progress":
-            record = self._mark_completed(record, status="completed")
-            self._repository.save_session(record)
-        summary = self._build_summary(record)
+        updated_record = record
+        if updated_record.status == "in_progress":
+            updated_record = self._mark_completed(updated_record, status="completed")
+        summary = self._build_summary(updated_record)
+        updated_record = replace(updated_record, summary=summary)
+        should_delete = not updated_record.attempts
+        if updated_record.is_preview:
+            self._cleanup_preview(updated_record)
+        elif should_delete:
+            self._repository.delete_session(updated_record.session_id)
+        else:
+            self._repository.save_session(updated_record)
+        return summary
+
+    def list_session_history(
+        self,
+        *,
+        quiz_id: str,
+        user_id: Optional[str] = None,
+        limit: int = 20,
+    ) -> List[Dict[str, object]]:
+        sessions = self._repository.list_sessions(quiz_id=quiz_id, user_id=user_id, limit=limit)
+        summaries: List[Dict[str, object]] = []
+        for record in sessions:
+            if record.is_preview or record.status == "in_progress":
+                continue
+            _, summary = self._ensure_summary_cached(record)
+            summaries.append(summary)
+        summaries.sort(key=lambda item: item.get("started_at") or datetime.now(timezone.utc), reverse=True)
+        return summaries
+
+    def get_session_review(
+        self,
+        session_id: str,
+        *,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, object]:
+        record = self._load_session(session_id)
+        if user_id and record.user_id != user_id:
+            raise QuizSessionConflictError("Session does not belong to this learner.")
+        record, summary = self._ensure_summary_cached(record)
+        attempts = self._build_attempt_review(record)
+        return {
+            "summary": summary,
+            "attempts": attempts,
+        }
+
+    def delete_session_record(
+        self,
+        session_id: str,
+        *,
+        user_id: Optional[str] = None,
+    ) -> None:
+        record = self._load_session(session_id)
+        if user_id and record.user_id != user_id:
+            raise QuizSessionConflictError("Session does not belong to this learner.")
         if record.is_preview:
             self._cleanup_preview(record)
-        return summary
+            return
+        self._repository.delete_session(session_id)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -425,9 +561,10 @@ class QuizService:
         contexts_payload: List[Dict[str, object]] = []
         coverage_reset = False
         session_state = session
-        if self._context_retriever and definition.embedding_document_id:
+        retriever = self._get_context_retriever()
+        if retriever and definition.embedding_document_id:
             try:
-                contexts, coverage_reset = self._context_retriever.fetch(
+                contexts, coverage_reset = retriever.fetch(
                     document_id=definition.embedding_document_id,
                     topic=topic,
                     difficulty=difficulty,
@@ -472,9 +609,10 @@ class QuizService:
             except Exception as exc:  # pragma: no cover - defensive fallback
                 generation_error = "Question generator is temporarily unavailable. Please try again."
                 logger.exception(
-                    "Unexpected error while generating quiz question for quiz %s (topic=%s)",
+                    "Unexpected error while generating quiz question for quiz %s (topic=%s): %s",
                     session.quiz_id,
                     topic,
+                    exc,
                 )
 
         if coverage_reset and session_state.used_slide_ids:
@@ -513,7 +651,7 @@ class QuizService:
             difficulty=difficulty,
             order=order,
             generated_at=datetime.now(timezone.utc),
-            source_session_id=session.session_id if session.is_preview else None,
+            source_session_id=session.session_id,
             source_document_id=definition.embedding_document_id,
             source_metadata=source_metadata_payload,
         )
@@ -527,6 +665,97 @@ class QuizService:
             session_state = replace(session_state, used_slide_ids=used)
 
         return record, session_state
+
+    def _maybe_queue_generated_question(
+        self,
+        record: QuizSessionRecord,
+        definition: QuizDefinitionRecord,
+        *,
+        next_source_value: str,
+        next_cursor_value: int,
+    ) -> QuizSessionRecord:
+        if (
+            record.is_preview
+            or record.status != "in_progress"
+            or next_source_value != "generated"
+            or record.queued_question_id
+        ):
+            return record
+        topics = definition.topics or ["General"]
+        topic_index = 0
+        if topics:
+            topic_index = next_cursor_value % len(topics)
+        topic = topics[topic_index] if topics else "General"
+        question_bank = self._repository.list_quiz_questions(record.quiz_id)
+        try:
+            queued_question, updated_record = self._create_question(
+                record,
+                definition,
+                question_bank,
+                topic_override=topic,
+                difficulty_override=record.current_difficulty,
+            )
+        except QuizGenerationError:
+            return record
+        updated_record = replace(updated_record, queued_question_id=queued_question.question_id)
+        self._repository.save_session(updated_record)
+        return updated_record
+
+    def _resolve_topic(
+        self,
+        record: QuizSessionRecord,
+        definition: QuizDefinitionRecord,
+        topic_override: Optional[str] = None,
+    ) -> Tuple[str, int, bool]:
+        if topic_override:
+            return topic_override, record.topic_cursor, True
+        topics = record.topics or definition.topics or ["General"]
+        cursor = record.topic_cursor % len(topics)
+        topic = topics[cursor]
+        next_cursor = (cursor + 1) % len(topics)
+        return topic, next_cursor, False
+
+    def _select_existing_question(
+        self,
+        candidates: List[QuizQuestionRecord],
+        *,
+        preferred_topic: Optional[str] = None,
+    ) -> Optional[QuizQuestionRecord]:
+        if not candidates:
+            return None
+        if preferred_topic:
+            preferred_topic_lower = preferred_topic.lower()
+            for question in candidates:
+                if question.topic.lower() == preferred_topic_lower:
+                    return question
+        return candidates[0]
+
+    def _determine_next_question_source(
+        self,
+        record: QuizSessionRecord,
+        used_existing: bool,
+        remaining_existing: List[QuizQuestionRecord],
+    ) -> str:
+        if record.is_preview:
+            return "generated"
+        if used_existing:
+            return "generated"
+        if remaining_existing:
+            return "existing"
+        return "generated"
+
+    def _calculate_max_streak(self, attempts: List[QuizAttemptRecord], *, target_correct: bool) -> int:
+        best = 0
+        current = 0
+        for attempt in attempts:
+            is_match = attempt.is_correct if target_correct else not attempt.is_correct
+            if is_match:
+                current += 1
+                if current > best:
+                    best = current
+            else:
+                current = 0
+        return best
 
     def _extract_total_slide_count(self, metadata: Optional[Dict[str, object]]) -> Optional[int]:
         if not metadata:
@@ -636,6 +865,7 @@ class QuizService:
             completed_at=datetime.now(timezone.utc),
             active_question_id=None,
             active_question_served_at=None,
+            queued_question_id=None,
         )
 
     def _build_summary(self, record: QuizSessionRecord) -> Dict[str, object]:
@@ -643,6 +873,7 @@ class QuizService:
         correct_answers = sum(1 for attempt in record.attempts if attempt.is_correct)
         accuracy = (correct_answers / total_questions) if total_questions else 0.0
         total_time_ms = sum(attempt.response_ms or 0 for attempt in record.attempts)
+        average_response_ms = int(total_time_ms / total_questions) if total_questions else None
 
         per_topic: Dict[str, Dict[str, int]] = {}
         for attempt in record.attempts:
@@ -656,6 +887,11 @@ class QuizService:
             if attempt.is_correct:
                 stats["correct"] += 1
 
+        duration_ms = None
+        if record.completed_at and record.started_at:
+            duration_delta = record.completed_at - record.started_at
+            duration_ms = max(0, int(duration_delta.total_seconds() * 1000))
+
         return {
             "session_id": record.session_id,
             "quiz_id": record.quiz_id,
@@ -667,9 +903,50 @@ class QuizService:
             "accuracy": round(accuracy, 2),
             "topics": per_topic,
             "total_time_ms": total_time_ms,
+             "average_response_ms": average_response_ms,
+            "max_correct_streak": record.max_correct_streak,
+            "max_incorrect_streak": record.max_incorrect_streak,
+            "duration_ms": duration_ms,
             "started_at": record.started_at,
             "completed_at": record.completed_at,
         }
+
+    def _build_attempt_review(self, record: QuizSessionRecord) -> List[Dict[str, object]]:
+        attempts: List[Dict[str, object]] = []
+        for attempt in record.attempts:
+            question = self._repository.get_quiz_question(
+                attempt.question_id,
+                quiz_id=record.quiz_id,
+            )
+            if question is None:
+                continue
+            attempts.append(
+                {
+                    "question_id": question.question_id,
+                    "prompt": question.prompt,
+                    "choices": question.choices,
+                    "topic": question.topic,
+                    "difficulty": question.difficulty,
+                    "selected_answer": attempt.selected_answer,
+                    "correct_answer": question.correct_answer,
+                    "is_correct": attempt.is_correct,
+                    "submitted_at": attempt.submitted_at,
+                    "response_ms": attempt.response_ms,
+                    "rationale": attempt.rationale,
+                    "correct_rationale": question.rationale,
+                    "incorrect_rationales": question.incorrect_rationales,
+                    "source_metadata": question.source_metadata,
+                }
+            )
+        return attempts
+
+    def _ensure_summary_cached(self, record: QuizSessionRecord) -> Tuple[QuizSessionRecord, Dict[str, object]]:
+        if record.summary:
+            return record, record.summary
+        summary = self._build_summary(record)
+        updated_record = replace(record, summary=summary)
+        self._repository.save_session(updated_record)
+        return updated_record, summary
 
     def _cleanup_preview(self, record: QuizSessionRecord) -> None:
         for question_id in record.preview_question_ids:
@@ -726,6 +1003,18 @@ class QuizService:
                 exc,
             )
             return None
+
+    def _get_context_retriever(self) -> Optional[SlideContextRetriever]:
+        if self._context_retriever is not None:
+            return self._context_retriever
+        if self._retriever_failed:
+            return None
+        retriever = self._select_retriever()
+        if retriever is None:
+            self._retriever_failed = True
+            return None
+        self._context_retriever = retriever
+        return retriever
 
     def _select_retriever(self) -> Optional[SlideContextRetriever]:
         try:

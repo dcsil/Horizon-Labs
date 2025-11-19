@@ -76,7 +76,10 @@ QuizStatusLiteral = Literal["in_progress", "completed", "timed_out"]
 
 
 class QuizDefinitionRequest(BaseModel):
-    quiz_id: str = Field(..., description="Stable identifier chosen by the instructor")
+    quiz_id: Optional[str] = Field(
+        default=None,
+        description="Stable identifier for the quiz. Leave blank to auto-generate a new quiz.",
+    )
     name: Optional[str] = Field(default=None, description="Human-friendly quiz name")
     topics: List[str] = Field(..., description="Topics or tags drawn from the source material")
     default_mode: QuizModeLiteral = Field(..., description="Default mode learners will use when starting sessions")
@@ -201,6 +204,10 @@ class QuizSummaryResponse(BaseModel):
     accuracy: float
     topics: Dict[str, TopicPerformance]
     total_time_ms: int
+    average_response_ms: Optional[int]
+    duration_ms: Optional[int]
+    max_correct_streak: int
+    max_incorrect_streak: int
     started_at: datetime
     completed_at: Optional[datetime]
 
@@ -219,3 +226,44 @@ class QuizAnswerResponse(BaseModel):
     session_completed: bool
     response_ms: Optional[int]
     summary: Optional[QuizSummaryResponse] = None
+
+
+class QuizSessionHistoryItem(BaseModel):
+    session_id: str
+    quiz_id: str
+    user_id: str
+    mode: QuizModeLiteral
+    status: QuizStatusLiteral
+    total_questions: int
+    correct_answers: int
+    accuracy: float
+    duration_ms: Optional[int]
+    max_correct_streak: int
+    started_at: datetime
+    completed_at: Optional[datetime]
+
+
+class QuizSessionHistoryResponse(BaseModel):
+    sessions: List[QuizSessionHistoryItem]
+
+
+class QuizAttemptReviewResponse(BaseModel):
+    question_id: str
+    prompt: str
+    choices: List[str]
+    topic: str
+    difficulty: QuizDifficultyLiteral
+    selected_answer: str
+    correct_answer: str
+    is_correct: bool
+    rationale: Optional[str]
+    correct_rationale: Optional[str]
+    incorrect_rationales: Dict[str, str]
+    source_metadata: Optional[Dict[str, Any]]
+    submitted_at: datetime
+    response_ms: Optional[int]
+
+
+class QuizSessionReviewResponse(BaseModel):
+    summary: QuizSummaryResponse
+    attempts: List[QuizAttemptReviewResponse]

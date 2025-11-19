@@ -13,6 +13,28 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 const INGEST_ENDPOINT = `${API_BASE_URL}/ingest/upload`;
 const DELETE_INGEST_ENDPOINT = `${API_BASE_URL}/ingest/document`;
 
+const DRAFT_STORAGE_KEYS = [
+  "quizConfigDraft",
+  "quizPreviewData",
+  "quizPreviewSession",
+  "quizPreviewQuestions",
+  "quizPreviewResponses",
+];
+
+const clearStoredQuizDrafts = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  for (const key of DRAFT_STORAGE_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.warn("Unable to clear stored quiz draft state", error);
+      break;
+    }
+  }
+};
+
 const ensureSessionId = () => {
   if (typeof window === "undefined") return "";
   const storageKey = "quizGeneratorSessionId";
@@ -55,6 +77,7 @@ export default function QuizGeneratorPage() {
   const saveSeedAndNavigate = () => {
     try {
       if (typeof window !== "undefined") {
+        clearStoredQuizDrafts();
         localStorage.setItem(
           "quizGeneratorSeed",
           JSON.stringify({

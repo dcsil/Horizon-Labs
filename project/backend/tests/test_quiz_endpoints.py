@@ -129,5 +129,20 @@ async def test_practice_adapts_difficulty(async_client):
         },
     )
     assert result2.status_code == 200
-    assert result2.json()["current_difficulty"] == "hard"
+    assert result2.json()["current_difficulty"] == "medium"
     assert result2.json()["session_completed"] is False
+
+    # Third consecutive correct answer satisfies the new default streak requirement.
+    question3 = await async_client.get(f"/quiz/session/{session_id}/next")
+    assert question3.status_code == 200
+    q3 = question3.json()
+    result3 = await async_client.post(
+        f"/quiz/session/{session_id}/answer",
+        json={
+            "question_id": q3["question_id"],
+            "selected_answer": q3["choices"][0],
+        },
+    )
+    assert result3.status_code == 200
+    assert result3.json()["current_difficulty"] == "hard"
+    assert result3.json()["session_completed"] is False

@@ -151,4 +151,4 @@ async def test_delete_session_rejects_non_preview(async_client):
     assert start.status_code == 200
 
     response = await async_client.delete(f"/quiz/session/{session_id}")
-    assert response.status_code == 400
+    assert response.status_code == 403

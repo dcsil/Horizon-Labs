@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Literal, Optional, Protocol
+from typing import Dict, List, Literal, Optional, Protocol
 
 try:  # pragma: no cover - optional dependency
     from google.cloud import firestore  # type: ignore[import]
@@ -214,12 +214,6 @@ class InMemoryChatRepository:
             )
         summaries.sort(key=lambda item: item.updated_at, reverse=True)
         return summaries
-
-
-def serialize_messages(messages: Iterable[ChatMessageRecord]) -> List[Dict[str, str]]:
-    return [message.to_dict() for message in messages]
-
-
 def _firestore_available() -> bool:
     return firestore is not None
 

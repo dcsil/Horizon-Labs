@@ -4,8 +4,6 @@ import random
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
 from clients.database.pinecone import PineconeRepository
 from clients.llm.settings import Settings
 
@@ -26,17 +24,11 @@ class SlideContextRetriever:
         self,
         settings: Settings,
         repository: Optional[PineconeRepository] = None,
-        embedder: Optional[GoogleGenerativeAIEmbeddings] = None,
+        embedder: Optional[object] = None,
     ) -> None:
-        if not settings.google_api_key:
-            raise RuntimeError(
-                "GOOGLE_API_KEY is required for context retrieval. Please set it in the backend .env file."
-            )
-        self._repository = repository or PineconeRepository(settings)
-        self._embedder = embedder or GoogleGenerativeAIEmbeddings(
-            model=settings.google_embeddings_model_name,
-            google_api_key=settings.google_api_key,
-        )
+        self._settings = settings
+        self._repository = repository
+        self._embedder = embedder
 
     def fetch(
         self,
@@ -53,8 +45,11 @@ class SlideContextRetriever:
         if not document_id:
             return ([], False)
 
+        repository = self._ensure_repository()
+        embedder = self._ensure_embedder()
+
         query = self._build_query(topic=topic, difficulty=difficulty)
-        vector = self._embedder.embed_query(query)
+        vector = embedder.embed_query(query)
         exclude_set = {value for value in (exclude_slide_ids or []) if value}
         ratio = None
         if total_slide_count and total_slide_count > 0:
@@ -73,7 +68,7 @@ class SlideContextRetriever:
                 return None
             return {"slide_id": {"$nin": clipped}}
 
-        response = self._repository.query(
+        response = repository.query(
             vector=vector,
             top_k=limit,
             document_id=document_id,
@@ -83,7 +78,7 @@ class SlideContextRetriever:
 
         if not matches and apply_filter:
             coverage_reset_needed = True
-            response = self._repository.query(
+            response = repository.query(
                 vector=vector,
                 top_k=limit,
                 document_id=document_id,
@@ -93,8 +88,10 @@ class SlideContextRetriever:
         if ratio is not None and ratio >= coverage_threshold:
             coverage_reset_needed = True
 
+        if matches:
+            random.shuffle(matches)
         if len(matches) > sample_size > 0:
-            matches = random.sample(matches, sample_size)
+            matches = matches[:sample_size]
 
         contexts: List[RetrievedContext] = []
         for match in matches:
@@ -110,6 +107,30 @@ class SlideContextRetriever:
                 )
             )
         return contexts, coverage_reset_needed
+
+    def _ensure_repository(self) -> PineconeRepository:
+        if self._repository is None:
+            self._repository = PineconeRepository(self._settings)
+        return self._repository
+
+    def _ensure_embedder(self):
+        if self._embedder is not None:
+            return self._embedder
+        if not self._settings.google_api_key:
+            raise RuntimeError(
+                "GOOGLE_API_KEY is required for context retrieval. Please set it in the backend .env file."
+            )
+        try:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore
+        except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "langchain-google-genai is required for slide retrieval embeddings. Install the dependency to continue."
+            ) from exc
+        self._embedder = GoogleGenerativeAIEmbeddings(
+            model=self._settings.google_embeddings_model_name,
+            google_api_key=self._settings.google_api_key,
+        )
+        return self._embedder
 
     @staticmethod
     def _build_query(*, topic: str, difficulty: str) -> str:

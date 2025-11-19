@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import io
 import logging
-from dataclasses import dataclass
 import asyncio
-from typing import Any, Dict, List, Optional, Sequence
-try:  # LangChain splitters moved to a standalone package in recent versions
-    from langchain.text_splitter import RecursiveCharacterTextSplitter  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - executed in newer LangChain installs
-    from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from pptx import Presentation
-from pypdf import PdfReader
+from dataclasses import dataclass
+from typing import Any, Dict, Iterator, List, Optional, Sequence
+
+try:  # pragma: no cover - dependency optional during local testing
+    from pypdf import PdfReader as _PdfReader  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - executed when package missing
+    _PdfReader = None  # type: ignore[assignment]
 
 from clients.database.pinecone import PineconeRepository
 from clients.llm.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+PdfReader = _PdfReader
 
 
 @dataclass
@@ -55,6 +55,13 @@ class SlideExtractor:
     """Pulls raw text (and titles) from a slide deck."""
 
     def extract(self, file_bytes: bytes) -> List[SlideChunk]:
+        try:
+            from pptx import Presentation  # type: ignore
+        except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "python-pptx is required to ingest PowerPoint files. Install the dependency to continue."
+            ) from exc
+
         presentation = Presentation(io.BytesIO(file_bytes))
         chunks: List[SlideChunk] = []
         for slide_number, slide in enumerate(presentation.slides, start=1):
@@ -90,6 +97,11 @@ class PDFExtractor:
     """Extracts page-level text from a PDF document."""
 
     def extract(self, file_bytes: bytes) -> List[SlideChunk]:
+        if PdfReader is None:
+            raise RuntimeError(
+                "pypdf is required to ingest PDF files. Install the dependency to continue."
+            )
+
         reader = PdfReader(io.BytesIO(file_bytes))
         chunks: List[SlideChunk] = []
         for page_number, page in enumerate(reader.pages, start=1):
@@ -116,6 +128,11 @@ class SlideChunker:
     """Turns slide-level text into smaller semantic units."""
 
     def __init__(self, *, chunk_size: int = 500, chunk_overlap: int = 75) -> None:
+        try:  # LangChain splitters moved to a standalone package in recent versions
+            from langchain.text_splitter import RecursiveCharacterTextSplitter  # type: ignore
+        except ModuleNotFoundError:  # pragma: no cover - executed in newer LangChain installs
+            from langchain_text_splitters import RecursiveCharacterTextSplitter  # type: ignore
+
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -149,6 +166,13 @@ class EmbeddingService:
             raise RuntimeError(
                 "GOOGLE_API_KEY is required to generate embeddings. Update your .env with a valid key."
             )
+        try:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore
+        except ModuleNotFoundError as exc:  # pragma: no cover - import guard
+            raise RuntimeError(
+                "langchain-google-genai is required for embeddings. Install the dependency to continue."
+            ) from exc
+
         self._settings = settings
         self._client = GoogleGenerativeAIEmbeddings(
             model=settings.google_embeddings_model_name,
@@ -202,42 +226,48 @@ class SlideIngestionPipeline:
                 chunk_count=0,
                 namespace=self._repository.namespace,
             )
-
-        texts = [chunk.text for chunk in chunked]
-        vectors = await self._embedding_service.embed(texts)
-
         repo_dimension = getattr(self._repository, "dimension", None)
-        if repo_dimension and vectors:
-            embedding_dimension = len(vectors[0])
-            if embedding_dimension != repo_dimension:
-                index_name = getattr(self._repository, "_index_name", "Pinecone index")
-                raise RuntimeError(
-                    f"Embedding model produced dimension {embedding_dimension}, but Pinecone index "
-                    f"{index_name} expects {repo_dimension}. "
-                    "Ensure PINECONE_INDEX_DIMENSION matches the embedding model output and recreate/reconfigure "
-                    "the Pinecone index if necessary."
+        dimension_validated = False
+        batch_size = getattr(self._settings, "ingest_batch_size", 64) or 64
+        base_metadata: Dict[str, Any] = dict(metadata or {})
+        total_chunks = 0
+
+        for batch in self._batched(chunked, batch_size):
+            texts = [chunk.text for chunk in batch]
+            vectors = await self._embedding_service.embed(texts)
+            if not vectors:
+                continue
+            if repo_dimension and not dimension_validated:
+                embedding_dimension = len(vectors[0])
+                if embedding_dimension != repo_dimension:
+                    index_name = getattr(self._repository, "_index_name", "Pinecone index")
+                    raise RuntimeError(
+                        f"Embedding model produced dimension {embedding_dimension}, but Pinecone index "
+                        f"{index_name} expects {repo_dimension}. "
+                        "Ensure PINECONE_INDEX_DIMENSION matches the embedding model output and recreate/reconfigure "
+                        "the Pinecone index if necessary."
+                    )
+                dimension_validated = True
+
+            items: List[Dict[str, Any]] = []
+            for chunk, embedding in zip(batch, vectors):
+                payload = self._build_pinecone_payload(
+                    chunk=chunk,
+                    embedding=embedding,
+                    base_metadata=base_metadata,
+                    document_id=document_id,
+                    snippet_chars=0,
                 )
+                items.append(payload)
 
-        items: List[Dict[str, Any]] = []
-        for chunk, embedding in zip(chunked, vectors):
-            payload = {
-                "id": f"{document_id}-s{chunk.slide_number}-c{chunk.chunk_index}",
-                "values": embedding,
-                "metadata": {
-                    **(metadata or {}),
-                    **chunk.metadata(),
-                    "document_id": document_id,
-                    "text": chunk.text,
-                },
-            }
-            items.append(payload)
-
-        self._repository.upsert(items)
+            if items:
+                self._repository.upsert(items)
+                total_chunks += len(items)
 
         return IngestionResult(
             document_id=document_id,
             slide_count=len(slides),
-            chunk_count=len(items),
+            chunk_count=total_chunks,
             namespace=self._repository.namespace,
         )
 
@@ -257,3 +287,34 @@ class SlideIngestionPipeline:
         if not document_id:
             return
         self._repository.delete_document(document_id)
+
+    @staticmethod
+    def _batched(items: Sequence[SlideChunk], batch_size: int) -> Iterator[List[SlideChunk]]:
+        if batch_size <= 0:
+            batch_size = 1
+        for start in range(0, len(items), batch_size):
+            yield items[start : start + batch_size]
+
+    def _build_pinecone_payload(
+        self,
+        *,
+        chunk: SlideChunk,
+        embedding: Sequence[float],
+        base_metadata: Dict[str, Any],
+        document_id: str,
+        snippet_chars: int,
+    ) -> Dict[str, Any]:
+        metadata_payload: Dict[str, Any] = {**base_metadata}
+        metadata_payload.update(chunk.metadata())
+        metadata_payload["document_id"] = document_id
+        if snippet_chars > 0:
+            snippet = chunk.text[:snippet_chars].strip()
+            metadata_payload["text"] = snippet or chunk.text
+        else:
+            metadata_payload["text"] = chunk.text
+
+        return {
+            "id": f"{document_id}-s{chunk.slide_number}-c{chunk.chunk_index}",
+            "values": list(embedding),
+            "metadata": metadata_payload,
+        }
