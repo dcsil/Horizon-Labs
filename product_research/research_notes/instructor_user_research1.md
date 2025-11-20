@@ -1,7 +1,7 @@
 Session Overview
 - **Researcher:** 
 - **Date:** 2025-11-18
-- **Participant initials/profile:** J.W. (Professor, senior professor of the math department at UofT)
+- **Participant initials/profile:** J.W. (friend acting as an instructor persona)
 - **CUJ title:** Trying to hand out a quiz that aligns with the course material and see the learning feedback from students with automotive LLM (Instructor CUJ 1 & 2)
 - **Scenario narrative:** J.W. is using the LearnLLM platform for uploading the course material and has a place for students that review or ask questions that align with the course. He needs an auto tool for him to publish course-related quizzes and see feedback from the student about how their learning process is going, as well as their chat situation.
 - **Application build / version:** A9 - Demo 4
@@ -24,9 +24,8 @@ Session Overview
     - Are there any specific features or improvements that could better help J.W.’s teaching?
 ## Participant Background
 - **Relevant context (experience, motivation, constraints)**
-    - J.W.  is a senior professor of the math department who has worked at UofT for 15 years
-    - He is familiar with using digital tools for teaching, but has not used any AI tools or AI-based learning platforms in the teaching process.
-    - J.W. has seen students being frustrated on learning new concepts and couldn’t catch up he is trying to seek ways that help his teaching and also his students’ learning.
+    - J.W. was given the persona of an instructor who regularly uses digital teaching tools but has limited experience with AI-powered education platforms.
+    - They are motivated to find tools that support student learning and identify areas where students struggle.
 - **Prior experience with similar products / tasks:**
   - Have heard students using ChatGPT, and have used ChatGPT sometimes for quick responses in unfamiliar areas.
 - **Prior familiarity with our product / domain:**
