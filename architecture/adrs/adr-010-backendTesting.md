@@ -1,4 +1,4 @@
-## ADR 009: Backend Testing Framework — pytest
+## ADR 010: Backend Testing Framework — pytest
 
 ### Context
 Our backend requires a unified testing framework that supports both fast unit tests and higher-level integration flows (chat, ingestion, quiz). We also must maintain ≥65% coverage and surface that metric in CI.
