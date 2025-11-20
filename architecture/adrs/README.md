@@ -22,7 +22,10 @@ The following ADRs have been accepted and are in effect for the project, these w
 - [ADR 007: Monitoring — Sentry + Google Analytics](adr-007-monitoring.md)
 - [ADR 008: Embeddings Provider — Google Generative AI (Gemini)](adr-008-embeddings.md)
 - [ADR 009: LLM Provider — OpenRouter](adr-009-LLM.md)
+- [ADR 010: Backend Testing - pytest](adr-010-backendTesting.md)
+- [ADR 011: Frontend Testing - jest](adr-011-frontendTesting.md)
 
 ### History of Changes
 - **October 8, 2025:** Backend deployment updated from Railway to Render to address free-tier limitations.
 - **November 12, 2025:** Embeddings Provider updated from OpenAI to Google Generative AI (Gemini) due to free plan.
+- **November 19, 2025:** Added pytest as the backend testing framework and jest as the frontend testing framework. 
