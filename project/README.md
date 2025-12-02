@@ -1,5 +1,9 @@
 # Horizon Labs Platform
 
+***DISCLAIMER**: This repository DOES NOT host the live application, this happens in a separate repository linked in this disclaimer. The code in this folder ("project") is a copy of the production code which can be found in Horizon Labs' [code repository](https://github.com/oliviaw12/horizon-labs-code), which contains the CLI runs, GitHub workflows, and actual hosting.*
+
+*This repository and the copy of the code here is provided to centralize all project-related material for ease of access to markers and reviewers. This code was last synced with the production repository on December 2, 2025 and represents the state of our Final Submission for CSC491.*
+
 FastAPI backend and Next.js frontend for chat, ingestion, and adaptive quizzes powered by LLMs.
 
 ## Features
