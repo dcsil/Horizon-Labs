@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Shared fixtures and stubs for backend unit and integration tests."""
+
 import os
 import sys
 from collections.abc import AsyncIterator, Iterator

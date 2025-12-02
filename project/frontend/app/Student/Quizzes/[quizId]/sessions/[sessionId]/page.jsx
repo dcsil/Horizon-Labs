@@ -17,6 +17,7 @@ const SESSION_META_KEY_PREFIX = "hl-student-quiz-session-";
 const ACTIVE_SESSION_KEY_PREFIX = "hl-student-active-session-";
 const OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/** Normalizes question payloads into a render-friendly shape with labeled options. */
 const normalizeQuestion = (payload) => {
   const options = (payload.choices || []).map((choice, index) => ({
     id: OPTION_LETTERS[index] || `Choice-${index + 1}`,
@@ -28,6 +29,7 @@ const normalizeQuestion = (payload) => {
   };
 };
 
+/** Formats a duration in milliseconds into a human-readable string. */
 const formatDuration = (durationMs) => {
   if (typeof durationMs !== "number" || durationMs <= 0) return "—";
   const totalSeconds = Math.round(durationMs / 1000);
@@ -37,6 +39,7 @@ const formatDuration = (durationMs) => {
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 };
 
+/** Formats a timestamp into a friendly short date/time string. */
 const formatTimestamp = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -49,6 +52,7 @@ const formatTimestamp = (value) => {
   });
 };
 
+/** Displays a single attempt with correctness labels and rationale. */
 const ReviewCard = ({ attempt, index }) => {
   const { question, response } = attempt;
   const selected = question.options.find((opt) => opt.text === response.selected_answer);
@@ -124,6 +128,9 @@ const ReviewCard = ({ attempt, index }) => {
   );
 };
 
+/**
+ * Quiz session runner that handles answering, navigation, and review.
+ */
 export default function StudentQuizSessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -198,6 +205,7 @@ export default function StudentQuizSessionPage() {
     }
   }, [quizId, sessionId, summary]);
 
+  /** Normalizes API attempts into UI-friendly question/response pairs. */
   const mapAttempts = useCallback((attempts) => {
     return attempts.map((entry, index) => {
       const questionPayload = normalizeQuestion({
@@ -222,6 +230,7 @@ export default function StudentQuizSessionPage() {
     });
   }, []);
 
+  /** Fetches the full session snapshot including summary and attempt history. */
   const fetchSessionSnapshot = useCallback(
     async ({ silent } = { silent: false }) => {
       if (!sessionId) return;
@@ -269,6 +278,7 @@ export default function StudentQuizSessionPage() {
     currentResponseRef.current = currentResponse;
   }, [currentResponse]);
 
+  /** Requests the next question for the active session unless already displayed. */
   const requestQuestion = useCallback(async () => {
     if (!sessionId || showSummaryView) return;
     if (initialQuestionRequestedRef.current && currentQuestionRef.current && !currentResponseRef.current) {
@@ -309,11 +319,13 @@ export default function StudentQuizSessionPage() {
     requestQuestion();
   }, [forcedReview, requestQuestion, summary]);
 
+  /** Marks an answer choice as selected for the current question. */
   const handleSelectOption = (optionId) => {
     if (currentResponse) return;
     setSelectedAnswerId(optionId);
   };
 
+  /** Submits the selected answer and updates history and summary state. */
   const handleSubmit = async () => {
     if (!currentQuestion || !selectedAnswerId || !sessionId) {
       setError("Select an answer before submitting.");
@@ -358,6 +370,7 @@ export default function StudentQuizSessionPage() {
     }
   };
 
+  /** Advances to the next question after clearing local selection state. */
   const handleNextQuestion = async () => {
     if (isFetchingQuestion) return;
     setCurrentQuestion(null);
@@ -366,6 +379,7 @@ export default function StudentQuizSessionPage() {
     await requestQuestion();
   };
 
+  /** Ends the session, persists summary, and clears active session tracking. */
   const handleEndSession = async () => {
     if (!sessionId) return;
     setIsEndingSession(true);
@@ -395,6 +409,7 @@ export default function StudentQuizSessionPage() {
     }
   };
 
+  /** Returns the user to the quiz overview page. */
   const handleReturnToOverview = () => {
     router.push(`/Student/Quizzes/${encodeURIComponent(quizId)}`);
   };

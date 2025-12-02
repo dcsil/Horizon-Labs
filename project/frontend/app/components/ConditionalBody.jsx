@@ -1,6 +1,9 @@
 "use client";
 import { usePathname } from "next/navigation";
 
+/**
+ * Wraps pages with route-aware body backgrounds (purple for login, gray otherwise).
+ */
 export default function ConditionalBody({ children }) {
   const pathname = usePathname();
   

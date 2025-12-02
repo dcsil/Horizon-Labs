@@ -24,19 +24,23 @@ const RESET_ENDPOINT = `${API_BASE_URL}/chat/reset`;
 const SESSION_LIST_STORAGE_KEY = "hl-student-chat-sessions";
 const LAST_SESSION_STORAGE_KEY = "hl-student-chat-last-session";
 
+/** Generates a random session id, preferring crypto.randomUUID when available. */
 const createId = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2));
 
+/** Returns the default welcome system message for a new chat. */
 const createWelcomeMessage = () => ({
   id: "welcome",
   role: "system",
   text: "Welcome to Horizon Labs Chat. Ask a question to begin.",
 });
 
+/** Builds a user-friendly session name fallback. */
 const defaultSessionName = (count) => `Chat ${count}`;
 
+/** Combines class names, filtering out falsy values. */
 const mergeClassNames = (...classes) => classes.filter(Boolean).join(" ");
 
 const BLOCK_LEVEL_MARKDOWN_TAGS = new Set([
@@ -72,6 +76,7 @@ const BLOCK_LEVEL_MARKDOWN_TAGS = new Set([
   "ul",
 ]);
 
+/** Checks whether a markdown code node contains multiple lines. */
 const isMultilineCodeNode = (node) => {
   if (!node || node.type !== "element" || node.tagName !== "code") return false;
   const textContent = node.children
@@ -86,6 +91,7 @@ const isMultilineCodeNode = (node) => {
   return typeof start === "number" && typeof end === "number" && end > start;
 };
 
+/** Recursively checks whether a markdown node contains any block-level elements. */
 const markdownNodeHasBlockElement = (node) => {
   if (!node || !Array.isArray(node.children)) return false;
   return node.children.some((child) => {
@@ -101,6 +107,7 @@ const markdownNodeHasBlockElement = (node) => {
   });
 };
 
+/** Maps backend classification sources to readable labels. */
 const describeSource = (sourceRaw) => {
   if (sourceRaw === "model") return "LLM (model)";
   if (sourceRaw === "heuristic") return "Heuristic fallback";
@@ -108,12 +115,16 @@ const describeSource = (sourceRaw) => {
   return "Unknown";
 };
 
+/** Human-friendly label for whether the LLM produced the response. */
 const describeLLMUsage = (sourceRaw, label) => {
   if (sourceRaw === "model") return "Yes";
   if (sourceRaw === "heuristic") return label && label !== "--" ? "No – heuristic used" : "--";
   return "--";
 };
 
+/**
+ * Student chat experience with session management, streaming answers, and diagnostics.
+ */
 export default function ChatPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState([]);
@@ -141,6 +152,7 @@ export default function ChatPage() {
   const sessionRef = useRef(activeSessionId || null);
   const skipNextHydrateRef = useRef(false);
 
+  /** Syncs UI guidance prompts with backend state. */
   const applyGuidanceState = useCallback((ready) => {
     setGuidanceReady((prev) => {
       if (!prev && ready) {
@@ -242,6 +254,7 @@ export default function ChatPage() {
     }
   }, [sessions, activeSessionId, applyGuidanceState]);
 
+  /** Loads historical messages for a session from the backend. */
   const fetchHistory = useCallback(async (sessionId, signal) => {
     const url = `${HISTORY_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
     const response = await fetch(url, { signal });
@@ -271,6 +284,7 @@ export default function ChatPage() {
     return { messages: restored, latestTimestamp: latest };
   }, []);
 
+  /** Fetches session-level state used to drive guidance toggles and diagnostics. */
   const fetchSessionState = useCallback(async (sessionId, signal) => {
     const url = `${STATE_ENDPOINT}?session_id=${encodeURIComponent(sessionId)}`;
     const response = await fetch(url, { signal });
@@ -283,6 +297,7 @@ export default function ChatPage() {
     return await response.json();
   }, []);
 
+  /** Hydrates history and session state while handling cancellations and loaders. */
   const runHydrate = useCallback(
     async (sessionId, { withLoaders = true, shouldCancel, signal } = {}) => {
       if (!sessionId) return null;
@@ -380,6 +395,7 @@ export default function ChatPage() {
     };
   }, [activeSessionId, runHydrate]);
 
+  /** Refreshes the session list from the backend and merges with any local data. */
   const refreshSessionsFromApi = useCallback(
     async (preferredId) => {
       setIsRefreshingSessions(true);
@@ -463,6 +479,7 @@ export default function ChatPage() {
     return () => document.removeEventListener("click", handleDocumentClick);
   }, []);
 
+  /** Ensures there is an active session id, creating one if none exists. */
   const ensureSessionId = useCallback(() => {
     const existing = sessionRef.current || activeSessionId;
     if (existing) {
@@ -501,6 +518,7 @@ export default function ChatPage() {
     return id;
   }, [activeSessionId, sessions]);
 
+  /** Updates a message by id using a partial patch or updater function. */
   const updateMessage = useCallback((id, updater) => {
     setMessages((prev) =>
       prev.map((msg) => {
@@ -511,6 +529,7 @@ export default function ChatPage() {
     );
   }, []);
 
+  /** Starts a new chat session and resets state. */
   const handleCreateSession = () => {
     const now = new Date().toISOString();
     const id = createId();
@@ -535,6 +554,7 @@ export default function ChatPage() {
     applyGuidanceState(false);
   };
 
+  /** Switches to another chat session, aborting any in-flight stream. */
   const handleSelectSession = (id) => {
     if (!id || id === activeSessionId) return;
     if (abortRef.current) {
@@ -555,6 +575,7 @@ export default function ChatPage() {
     setSessionMenuId(null);
   };
 
+  /** Renames a chat session using a prompt dialog. */
   const handleRenameSession = (id) => {
     if (typeof window === "undefined") return;
     const session = sessions.find((item) => item.id === id);
@@ -566,6 +587,7 @@ export default function ChatPage() {
     );
   };
 
+  /** Resets a session on the server and removes it locally. */
   const handleResetSession = async (id) => {
     if (!id) return;
     if (abortRef.current) {
@@ -598,6 +620,7 @@ export default function ChatPage() {
     }
   };
 
+  /** Reloads the current session from the backend APIs. */
   const handleRefreshClick = async () => {
     const sessionId = sessionRef.current;
     if (!sessionId) return;
@@ -609,6 +632,7 @@ export default function ChatPage() {
     }
   };
 
+  /** Sends a message, streams the assistant response, and refreshes session data. */
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming || isLoadingHistory || isClassifying) return;
@@ -736,6 +760,7 @@ export default function ChatPage() {
     })();
   };
 
+  /** Derived summary labels for the session list sidebar. */
   const sessionSummaries = useMemo(() => {
     return sessions.map((session, index) => {
       const timestamp =
@@ -750,11 +775,13 @@ export default function ChatPage() {
     });
   }, [sessions]);
 
+  /** Filters out system messages for display. */
   const nonSystemMessages = useMemo(
     () => messages.filter((message) => message.role !== "system"),
     [messages]
   );
 
+  /** Custom renderers for markdown output to align with chat styling. */
   const markdownComponents = useMemo(
     () => ({
       table: ({ node, className, ...props }) => (

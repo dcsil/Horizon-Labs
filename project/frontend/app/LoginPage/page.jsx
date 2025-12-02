@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from 'next/font/google';
 
@@ -8,6 +8,7 @@ const poppins = Poppins({
   weight: ['400', '500', '600', '700'],
 });
 
+/** Simple login landing that routes students and instructors to their homes. */
 export default function LoginPage() {
   const router = useRouter();
   const [role, setRole] = useState("student");
@@ -25,6 +26,7 @@ export default function LoginPage() {
     }
   }, []);
 
+  /** Updates form state for username, password, and remember-me toggle. */
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -33,6 +35,7 @@ export default function LoginPage() {
     }));
   };
 
+  /** Submits the form and directs the user to the appropriate role dashboard. */
   const handleSubmit = (e) => {
     e.preventDefault();
     if (role === "instructor") {

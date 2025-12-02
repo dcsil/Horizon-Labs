@@ -10,6 +10,9 @@ const poppins = Poppins({
 
 const ROLE_EVENT = "role-updated";
 
+/**
+ * Landing page where users choose student or instructor role before continuing.
+ */
 export default function home() {
   const router = useRouter();
   const [role, setRole] = useState("student");
@@ -25,6 +28,7 @@ export default function home() {
     window.dispatchEvent(new CustomEvent(ROLE_EVENT, { detail: role }));
   }, [role]);
 
+  /** Routes the user to the login flow after selecting a role. */
   const onStart = () => {
     router.push("/LoginPage");
   };

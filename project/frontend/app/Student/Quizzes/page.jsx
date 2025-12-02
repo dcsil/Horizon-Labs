@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -15,6 +15,7 @@ const heroSubtitleClasses = `text-base text-gray-600 mt-2 ${poppins.className}`;
 const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000").replace(/\/$/, "");
 const QUIZ_DEFINITIONS_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
+/** Reusable section for rendering quiz cards with empty state handling. */
 const Section = ({ title, description, quizzes, emptyMessage, onSelect }) => (
   <section className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
     <div className="mb-4">
@@ -76,6 +77,9 @@ const Section = ({ title, description, quizzes, emptyMessage, onSelect }) => (
   </section>
 );
 
+/**
+ * Lists available assessment and practice quizzes published for students.
+ */
 export default function StudentQuizzesPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
@@ -85,6 +89,8 @@ export default function StudentQuizzesPage() {
 
   useEffect(() => {
     let isMounted = true;
+
+    /** Fetches published quiz definitions and separates them by mode. */
     const fetchQuizzes = async () => {
       setIsLoading(true);
       setError(null);
@@ -118,6 +124,7 @@ export default function StudentQuizzesPage() {
     };
   }, []);
 
+  /** Routes to a selected quiz's detail page. */
   const handleSelectQuiz = (quizId) => {
     if (!quizId) return;
     router.push(`/Student/Quizzes/${encodeURIComponent(quizId)}`);

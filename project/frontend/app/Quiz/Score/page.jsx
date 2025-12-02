@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ConditionalHeader from "../../components/ConditionalHeader";
 import { Poppins } from "next/font/google";
@@ -10,6 +10,7 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
+/** Parses JSON safely, returning null on failure. */
 const safeParse = (value) => {
   if (!value) return null;
   try {
@@ -32,6 +33,7 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 );
 const QUIZ_DEFINITION_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
+/** Displays preview quiz results and lets instructors publish the quiz. */
 export default function QuizScorePage() {
   const router = useRouter();
   const [results, setResults] = useState(DEFAULT_RESULTS);
@@ -102,6 +104,7 @@ export default function QuizScorePage() {
     };
   }, [quizMeta]);
 
+  /** Shows a temporary notice after publish/unpublish attempts. */
   const showPublishNotice = (type, message) => {
     setPublishNotice({ type, message });
     if (publishNoticeTimeoutRef.current) {
@@ -112,10 +115,12 @@ export default function QuizScorePage() {
     }, 4000);
   };
 
+  /** Returns to the quiz builder for edits. */
   const handleEditQuiz = () => {
     router.push("/Instructor/QuizGenerator");
   };
 
+  /** Toggles quiz publish status by resubmitting the definition. */
   const handlePublishQuiz = async () => {
     if (isPublishLoading) return;
     const quizId = quizMeta?.quizId ?? quizMeta?.id ?? null;

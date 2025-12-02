@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Covers quiz HTTP endpoints for definition CRUD and session lifecycle flows."""
+
 from datetime import datetime, timedelta, timezone
 
 import pytest

@@ -1,3 +1,6 @@
+"""Chat persistence layer abstractions for LLMService, with Firestore-backed and in-memory
+repositories. Uses google-cloud-firestore when available; otherwise falls back to a local store."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -106,6 +109,7 @@ class ChatSessionRecord:
 
 @dataclass(frozen=True)
 class ChatSessionSummary:
+    """Lightweight summary row for listing chat sessions."""
     session_id: str
     updated_at: datetime
     message_count: int
@@ -131,6 +135,7 @@ class FirestoreChatRepository:
     """Firestore-backed implementation used in production."""
 
     def __init__(self, *, collection_name: str = "chat_sessions") -> None:
+        """Configure Firestore collection used for chat session documents."""
         if not _firestore_available():
             raise RuntimeError(
                 "google-cloud-firestore is required for FirestoreChatRepository. Install the package "
@@ -140,6 +145,7 @@ class FirestoreChatRepository:
         self._collection = self._client.collection(collection_name)
 
     def load_session(self, session_id: str) -> Optional[ChatSessionRecord]:
+        """Fetch a chat session document from Firestore."""
         doc = self._collection.document(session_id).get()
         if not doc.exists:
             return None
@@ -147,13 +153,16 @@ class FirestoreChatRepository:
         return ChatSessionRecord.from_dict(session_id, data)
 
     def save_session(self, record: ChatSessionRecord) -> None:
+        """Upsert a chat session document into Firestore."""
         doc_ref = self._collection.document(record.session_id)
         doc_ref.set(record.to_dict(), merge=True)
 
     def delete_session(self, session_id: str) -> None:
+        """Remove a chat session document from Firestore."""
         self._collection.document(session_id).delete()
 
     def list_sessions(self) -> List[ChatSessionSummary]:
+        """List chat sessions ordered by last update, reading from Firestore."""
         summaries: List[ChatSessionSummary] = []
         for doc in self._collection.stream():
             data = doc.to_dict() or {}
@@ -183,18 +192,22 @@ class InMemoryChatRepository:
         self._store: Dict[str, Dict[str, object]] = {}
 
     def load_session(self, session_id: str) -> Optional[ChatSessionRecord]:
+        """Return a stored session from the in-memory dict."""
         payload = self._store.get(session_id)
         if not payload:
             return None
         return ChatSessionRecord.from_dict(session_id, payload)
 
     def save_session(self, record: ChatSessionRecord) -> None:
+        """Persist or update a session in memory."""
         self._store[record.session_id] = record.to_dict()
 
     def delete_session(self, session_id: str) -> None:
+        """Delete a session from the in-memory store."""
         self._store.pop(session_id, None)
 
     def list_sessions(self) -> List[ChatSessionSummary]:
+        """List sessions stored in memory ordered by last update."""
         summaries: List[ChatSessionSummary] = []
         for session_id, payload in self._store.items():
             messages = payload.get("messages", []) or []
@@ -214,11 +227,15 @@ class InMemoryChatRepository:
             )
         summaries.sort(key=lambda item: item.updated_at, reverse=True)
         return summaries
+
+
 def _firestore_available() -> bool:
+    """Check whether google-cloud-firestore is importable."""
     return firestore is not None
 
 
 def _firestore_timestamp():
+    """Return a Firestore server timestamp placeholder or a UTC fallback."""
     if firestore is not None:
         return firestore.SERVER_TIMESTAMP
     return datetime.now(timezone.utc)

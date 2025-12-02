@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Integration test verifying persisted chat history is returned by the API."""
+
 from datetime import datetime, timezone
 
 import pytest

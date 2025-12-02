@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Exercises PineconeRepository upsert/delete/query normalization and error paths."""
+
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 

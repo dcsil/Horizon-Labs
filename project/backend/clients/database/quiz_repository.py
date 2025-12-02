@@ -1,3 +1,6 @@
+"""Quiz persistence layer for definitions, question bank, and learner sessions.
+Provides Firestore-backed and in-memory repositories consumed by QuizService."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,10 +19,12 @@ QuizMode = Literal["assessment", "practice"]
 
 
 def _now() -> datetime:
+    """Return current UTC timestamp; isolated for testing."""
     return datetime.now(timezone.utc)
 
 
 def _parse_datetime(raw: Optional[str]) -> datetime:
+    """Parse ISO timestamps from storage, falling back to now on failure."""
     if not raw:
         return _now()
     try:
@@ -48,6 +53,7 @@ class QuizDefinitionRecord:
     updated_at: datetime = field(default_factory=_now)
 
     def to_dict(self) -> Dict[str, object]:
+        """Serialize definition to a Firestore-friendly dict with updated timestamp."""
         return {
             "quiz_id": self.quiz_id,
             "name": self.name,
@@ -67,6 +73,7 @@ class QuizDefinitionRecord:
 
     @staticmethod
     def from_dict(payload: Dict[str, object]) -> "QuizDefinitionRecord":
+        """Instantiate a definition record from stored dict data."""
         return QuizDefinitionRecord(
             quiz_id=str(payload.get("quiz_id", "")),
             name=payload.get("name"),
@@ -105,6 +112,7 @@ class QuizQuestionRecord:
     source_metadata: Dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
+        """Serialize question record to a Firestore-friendly dict."""
         return {
             "quiz_id": self.quiz_id,
             "question_id": self.question_id,
@@ -124,6 +132,7 @@ class QuizQuestionRecord:
 
     @staticmethod
     def from_dict(payload: Dict[str, object]) -> "QuizQuestionRecord":
+        """Instantiate a question record from stored dict data."""
         return QuizQuestionRecord(
             quiz_id=str(payload.get("quiz_id", "")),
             question_id=str(payload.get("question_id", "")),
@@ -155,6 +164,7 @@ class QuizAttemptRecord:
     presented_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, object]:
+        """Serialize an attempt to a Firestore-friendly dict."""
         payload: Dict[str, object] = {
             "question_id": self.question_id,
             "selected_answer": self.selected_answer,
@@ -171,6 +181,7 @@ class QuizAttemptRecord:
 
     @staticmethod
     def from_dict(payload: Dict[str, object]) -> "QuizAttemptRecord":
+        """Instantiate an attempt record from stored dict data."""
         return QuizAttemptRecord(
             question_id=str(payload.get("question_id", "")),
             selected_answer=str(payload.get("selected_answer", "")),
@@ -218,6 +229,7 @@ class QuizSessionRecord:
     queued_question_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, object]:
+        """Serialize session state to a Firestore-friendly dict."""
         payload: Dict[str, object] = {
             "session_id": self.session_id,
             "quiz_id": self.quiz_id,
@@ -257,6 +269,7 @@ class QuizSessionRecord:
 
     @staticmethod
     def from_dict(payload: Dict[str, object]) -> "QuizSessionRecord":
+        """Instantiate a session record from stored dict data."""
         attempts_payload = payload.get("attempts", []) or []
         return QuizSessionRecord(
             session_id=str(payload.get("session_id", "")),
@@ -351,6 +364,7 @@ class FirestoreQuizRepository:
     """Firestore-backed implementation."""
 
     def __init__(self, *, collection_name: str = "quiz_data") -> None:
+        """Configure Firestore collections for definitions, questions, and sessions."""
         if not _firestore_available():
             raise RuntimeError(
                 "google-cloud-firestore is required for FirestoreQuizRepository. Install the package "
@@ -363,6 +377,7 @@ class FirestoreQuizRepository:
         self._question_subcollection = f"{collection_name}_questions"
 
     def load_quiz_definition(self, quiz_id: str) -> Optional[QuizDefinitionRecord]:
+        """Fetch a quiz definition document by id."""
         document = self._definitions.document(quiz_id).get()
         if not document.exists:
             return None
@@ -370,14 +385,17 @@ class FirestoreQuizRepository:
         return QuizDefinitionRecord.from_dict(data)
 
     def save_quiz_definition(self, record: QuizDefinitionRecord) -> None:
+        """Create or update a quiz definition document."""
         self._definitions.document(record.quiz_id).set(record.to_dict(), merge=True)
 
     def delete_quiz_definition(self, quiz_id: str) -> None:
+        """Delete definition, its questions, and all related sessions."""
         self._delete_definition_questions(quiz_id)
         self._definitions.document(quiz_id).delete()
         self.delete_sessions_for_quiz(quiz_id)
 
     def list_quiz_definitions(self) -> List[QuizDefinitionRecord]:
+        """List all quiz definitions ordered by last update."""
         records: List[QuizDefinitionRecord] = []
         for doc in self._definitions.stream():
             data = doc.to_dict() or {}
@@ -386,6 +404,7 @@ class FirestoreQuizRepository:
         return records
 
     def list_quiz_questions(self, quiz_id: str) -> List[QuizQuestionRecord]:
+        """Return all stored questions for a quiz ordered by authoring/generation."""
         questions: List[QuizQuestionRecord] = []
         question_collection = self._definition_questions(quiz_id)
         for doc in question_collection.stream():
@@ -395,12 +414,14 @@ class FirestoreQuizRepository:
         return questions
 
     def save_quiz_question(self, record: QuizQuestionRecord) -> None:
+        """Upsert a question document under its definition."""
         self._definition_questions(record.quiz_id).document(record.question_id).set(
             record.to_dict(),
             merge=True,
         )
 
     def get_quiz_question(self, question_id: str, *, quiz_id: Optional[str] = None) -> Optional[QuizQuestionRecord]:
+        """Fetch a question by id, optionally scoped to a specific quiz."""
         document = None
         if quiz_id:
             document = self._definition_questions(quiz_id).document(question_id).get()
@@ -413,6 +434,7 @@ class FirestoreQuizRepository:
         return QuizQuestionRecord.from_dict(document.to_dict() or {})
 
     def load_session(self, session_id: str) -> Optional[QuizSessionRecord]:
+        """Load a learner session document by id."""
         document = self._sessions.document(session_id).get()
         if not document.exists:
             return None
@@ -420,6 +442,7 @@ class FirestoreQuizRepository:
         return QuizSessionRecord.from_dict(data)
 
     def save_session(self, record: QuizSessionRecord) -> None:
+        """Persist or update a learner session document."""
         self._sessions.document(record.session_id).set(record.to_dict(), merge=True)
 
     def list_sessions(
@@ -429,6 +452,7 @@ class FirestoreQuizRepository:
         user_id: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[QuizSessionRecord]:
+        """List sessions filtered by quiz/user with optional limit."""
         query = self._sessions
         if quiz_id:
             query = query.where("quiz_id", "==", quiz_id)
@@ -448,6 +472,7 @@ class FirestoreQuizRepository:
         return records
 
     def delete_quiz_question(self, question_id: str, *, quiz_id: Optional[str] = None) -> None:
+        """Delete a stored question, searching globally if quiz_id not provided."""
         if quiz_id:
             self._definition_questions(quiz_id).document(question_id).delete()
             return
@@ -456,16 +481,21 @@ class FirestoreQuizRepository:
             document.reference.delete()
 
     def delete_session(self, session_id: str) -> None:
+        """Delete a learner session document."""
         self._sessions.document(session_id).delete()
+
     def delete_sessions_for_quiz(self, quiz_id: str) -> None:
+        """Delete all sessions associated with a quiz id."""
         query = self._sessions.where("quiz_id", "==", quiz_id)
         for doc in query.stream():
             doc.reference.delete()
 
     def _definition_questions(self, quiz_id: str):
+        """Return the subcollection handle for questions under a quiz definition."""
         return self._definitions.document(quiz_id).collection(self._question_subcollection)
 
     def _find_question_document(self, question_id: str):
+        """Search across quiz question subcollections for a specific question id."""
         query = (
             self._client.collection_group(self._question_subcollection)
             .where("question_id", "==", question_id)
@@ -476,6 +506,7 @@ class FirestoreQuizRepository:
         return None
 
     def _delete_definition_questions(self, quiz_id: str) -> None:
+        """Remove all questions under a given quiz definition."""
         question_collection = self._definition_questions(quiz_id)
         for doc in question_collection.stream():
             doc.reference.delete()
@@ -490,24 +521,29 @@ class InMemoryQuizRepository:
         self._sessions: Dict[str, Dict[str, object]] = {}
 
     def load_quiz_definition(self, quiz_id: str) -> Optional[QuizDefinitionRecord]:
+        """Retrieve a quiz definition from memory."""
         payload = self._definitions.get(quiz_id)
         if not payload:
             return None
         return QuizDefinitionRecord.from_dict(payload)
 
     def save_quiz_definition(self, record: QuizDefinitionRecord) -> None:
+        """Persist or update a definition in memory."""
         self._definitions[record.quiz_id] = record.to_dict()
 
     def delete_quiz_definition(self, quiz_id: str) -> None:
+        """Delete a definition and its sessions from memory."""
         self._definitions.pop(quiz_id, None)
         self._sessions = {sid: payload for sid, payload in self._sessions.items() if payload.get("quiz_id") != quiz_id}
 
     def list_quiz_definitions(self) -> List[QuizDefinitionRecord]:
+        """List all definitions stored in memory ordered by update time."""
         records = [QuizDefinitionRecord.from_dict(payload) for payload in self._definitions.values()]
         records.sort(key=lambda item: item.updated_at, reverse=True)
         return records
 
     def list_quiz_questions(self, quiz_id: str) -> List[QuizQuestionRecord]:
+        """List questions for a quiz from the in-memory store."""
         questions: List[QuizQuestionRecord] = []
         for payload in self._questions.values():
             if payload.get("quiz_id") == quiz_id:
@@ -516,21 +552,25 @@ class InMemoryQuizRepository:
         return questions
 
     def save_quiz_question(self, record: QuizQuestionRecord) -> None:
+        """Persist or update a question in memory."""
         self._questions[record.question_id] = record.to_dict()
 
     def get_quiz_question(self, question_id: str, *, quiz_id: Optional[str] = None) -> Optional[QuizQuestionRecord]:
+        """Retrieve a question by id from memory."""
         payload = self._questions.get(question_id)
         if not payload:
             return None
         return QuizQuestionRecord.from_dict(payload)
 
     def load_session(self, session_id: str) -> Optional[QuizSessionRecord]:
+        """Retrieve a learner session from memory."""
         payload = self._sessions.get(session_id)
         if not payload:
             return None
         return QuizSessionRecord.from_dict(payload)
 
     def save_session(self, record: QuizSessionRecord) -> None:
+        """Persist or update a session in memory."""
         self._sessions[record.session_id] = record.to_dict()
 
     def list_sessions(
@@ -540,6 +580,7 @@ class InMemoryQuizRepository:
         user_id: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> List[QuizSessionRecord]:
+        """List sessions from memory filtered by quiz/user with optional limit."""
         records: List[QuizSessionRecord] = []
         for payload in self._sessions.values():
             if quiz_id and payload.get("quiz_id") != quiz_id:
@@ -553,11 +594,15 @@ class InMemoryQuizRepository:
         return records
 
     def delete_quiz_question(self, question_id: str, *, quiz_id: Optional[str] = None) -> None:
+        """Delete a question from the in-memory store."""
         self._questions.pop(question_id, None)
 
     def delete_session(self, session_id: str) -> None:
+        """Delete a session from the in-memory store."""
         self._sessions.pop(session_id, None)
+
     def delete_sessions_for_quiz(self, quiz_id: str) -> None:
+        """Delete all sessions associated with a quiz id from memory."""
         self._sessions = {
             sid: payload
             for sid, payload in self._sessions.items()
@@ -566,4 +611,5 @@ class InMemoryQuizRepository:
 
 
 def _firestore_available() -> bool:
+    """Check whether google-cloud-firestore is importable."""
     return firestore is not None

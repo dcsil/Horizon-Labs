@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Covers LLMService chat flow, state handling, ingestion hooks, and analytics."""
+
 from datetime import datetime, timedelta, timezone
 
 import pytest

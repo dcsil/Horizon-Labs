@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Validate chat analytics endpoint aggregates classifications and session stats."""
+
 from datetime import datetime, timedelta, timezone
 
 import pytest

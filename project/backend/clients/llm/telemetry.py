@@ -1,3 +1,6 @@
+"""Lightweight telemetry logger for chat/classifier usage metrics. Logs structured events
+to the 'telemetry' logger based on sampling settings from Settings."""
+
 from __future__ import annotations
 
 import json
@@ -34,6 +37,7 @@ class TelemetryLogger:
         self._settings = settings
 
     def record(self, event: TelemetryEvent) -> None:
+        """Emit a structured usage event if telemetry is enabled and passes sampling."""
         if not self._settings.telemetry_enabled:
             return
         if random.random() > self._settings.telemetry_sample_rate:

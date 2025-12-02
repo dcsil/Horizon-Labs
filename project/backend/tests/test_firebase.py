@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Guards Firestore client construction and required environment validation."""
+
 import types
 
 import pytest

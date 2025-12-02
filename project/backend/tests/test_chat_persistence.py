@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Exercises chat history persistence/loading with a stubbed streaming LLM."""
+
 import os
 import sys
 from datetime import datetime, timezone

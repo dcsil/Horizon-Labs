@@ -1,3 +1,6 @@
+"""Learner turn classifier for chat sessions with heuristic fallback when the model is disabled.
+Uses OpenRouter/OpenAI-compatible ChatOpenAI via LangChain when configured."""
+
 from __future__ import annotations
 
 import json
@@ -45,6 +48,7 @@ class TurnClassifier:
         conversation: Iterable[SystemMessage | HumanMessage | AIMessage],
         min_words: int,
     ) -> ClassificationResult:
+        """Classify a learner turn using the model if enabled; otherwise fall back to heuristics."""
         heuristic = self._heuristic_label(learner_text, min_words)
         if not self._enabled:
             return heuristic
@@ -56,6 +60,8 @@ class TurnClassifier:
                     "langchain-openai is required to run the turn classifier. Install the dependency to continue."
                 )
 
+            # LLM-backed classification path (uses OpenRouter/OpenAI compatible ChatOpenAI).
+            # OpenRouter credentials/base URL come from Settings (openrouter_api_key/base_url).
             llm = ChatOpenAI(
                 model=self._model_name,
                 temperature=self._temperature,
@@ -66,6 +72,7 @@ class TurnClassifier:
 
             history_excerpt = self._summarise_history(conversation)
             prompt = self._build_prompt(history_excerpt, learner_text)
+            # Invoke model to get JSON label/rationale; falls back to heuristic on failure.
             response = await llm.ainvoke(prompt)
             raw_response_text = response.content
             parsed = self._parse_response(raw_response_text)
@@ -87,6 +94,7 @@ class TurnClassifier:
 
     @staticmethod
     def _heuristic_label(text: str, min_words: int) -> ClassificationResult:
+        """Lightweight rule-based classifier used when the model is disabled/unavailable."""
         clean = text.strip()
         word_count = len([word for word in clean.split() if word])
         has_reasoning = any(
@@ -117,6 +125,7 @@ class TurnClassifier:
 
     @staticmethod
     def _summarise_history(messages: Iterable[SystemMessage | HumanMessage | AIMessage]) -> str:
+        """Compact the recent conversation into a small excerpt for the classifier prompt."""
         turns = []
         for message in messages:
             role = "User" if isinstance(message, HumanMessage) else "Assistant" if isinstance(message, AIMessage) else "System"
@@ -126,6 +135,7 @@ class TurnClassifier:
 
     @staticmethod
     def _build_prompt(history: str, learner_text: str) -> list[SystemMessage | HumanMessage]:
+        """Build a constrained JSON-only prompt instructing the classifier model."""
         system_instruction = SystemMessage(
             content=(
                 "You are an instructional coach evaluating the learner's latest message.\n"
@@ -149,6 +159,7 @@ class TurnClassifier:
 
     @staticmethod
     def _parse_response(raw: str) -> Optional[dict[str, str]]:
+        """Parse model JSON output robustly, handling fenced code blocks and noisy wrappers."""
         def _attempt(candidate: str) -> Optional[dict[str, str]]:
             parsed = json.loads(candidate)
             label = parsed.get("label")

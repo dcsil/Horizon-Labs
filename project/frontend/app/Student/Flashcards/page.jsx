@@ -79,6 +79,7 @@ const ingestStages = ["Parsing slides", "Chunking concepts", "Indexing embedding
 
 const topicPresets = ["Neural Nets", "Optimization", "Evaluation", "General"];
 
+/** Displays numbered progress badges for the deck creation wizard. */
 const StepBadge = ({ label, index, isActive, isComplete }) => (
   <div className="flex items-center gap-3">
     <div
@@ -96,6 +97,9 @@ const StepBadge = ({ label, index, isActive, isComplete }) => (
   </div>
 );
 
+/**
+ * Flashcards lab preview that simulates ingesting materials and reviewing generated cards.
+ */
 export default function StudentFlashcardsPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
@@ -124,6 +128,7 @@ export default function StudentFlashcardsPage() {
     return flashcards[index];
   }, [flashcards, reviewQueue]);
 
+  /** Handles file selection and resets ingest progress state. */
   const handleFileChange = (event) => {
     const nextFile = event.target.files?.[0];
     setUploadedFile(nextFile || null);
@@ -132,6 +137,7 @@ export default function StudentFlashcardsPage() {
     setCurrentStep(1);
   };
 
+  /** Simulates ingestion progress across staged steps. */
   const simulateIngestion = () => {
     if (!uploadedFile) return;
     setCurrentStep(2);
@@ -160,6 +166,7 @@ export default function StudentFlashcardsPage() {
     });
   };
 
+  /** Toggles inclusion of a topic tag. */
   const toggleTopic = (topic) => {
     setTopics((prev) => {
       if (prev.includes(topic)) {
@@ -169,6 +176,7 @@ export default function StudentFlashcardsPage() {
     });
   };
 
+  /** Routes to the demo walkthrough when selecting the preview deck. */
   const handleDeckReview = (deck) => {
     if (deck.demoPreview) {
       router.push("/Student/Flashcards/Walkthrough");
@@ -177,6 +185,7 @@ export default function StudentFlashcardsPage() {
     setDeckNotice("Full deck review is coming soon. Try the Discrete Math demo for a sneak peek.");
   };
 
+  /** Simulates flashcard generation and advances the wizard. */
   const handleGenerateFlashcards = () => {
     setIsGenerating(true);
     setTimeout(() => {
@@ -187,6 +196,7 @@ export default function StudentFlashcardsPage() {
     }, 1100);
   };
 
+  /** Initializes a review session queue from the generated cards. */
   const startReviewSession = () => {
     setReviewQueue(flashcards.map((_, index) => index));
     setSessionStats({ correct: 0, incorrect: 0 });
@@ -194,11 +204,13 @@ export default function StudentFlashcardsPage() {
     setCurrentStep(5);
   };
 
+  /** Reveals the answer for the current flashcard. */
   const handleReveal = () => {
     if (!currentReviewCard) return;
     setShowAnswer(true);
   };
 
+  /** Records whether the student got the card correct and moves to the next. */
   const markResponse = (isCorrect) => {
     if (!reviewQueue.length || !showAnswer) return;
     const [currentIndex, ...rest] = reviewQueue;

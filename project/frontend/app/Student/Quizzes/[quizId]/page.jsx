@@ -16,6 +16,7 @@ const STUDENT_USER_ID = process.env.NEXT_PUBLIC_STUDENT_ID || "student-demo";
 const SESSION_META_KEY_PREFIX = "hl-student-quiz-session-";
 const ACTIVE_SESSION_KEY_PREFIX = "hl-student-active-session-";
 
+/** Small info pill used to show quiz metadata. */
 const InfoRow = ({ label, value }) => (
   <div className="flex flex-col gap-1 rounded-2xl border border-gray-200 bg-white px-4 py-3">
     <span className="text-xs uppercase tracking-wide text-gray-500">{label}</span>
@@ -23,6 +24,9 @@ const InfoRow = ({ label, value }) => (
   </div>
 );
 
+/**
+ * Quiz details page where students can start, resume, or review attempts.
+ */
 export default function StudentQuizDetailsPage() {
   const params = useParams();
   const router = useRouter();
@@ -42,6 +46,7 @@ export default function StudentQuizDetailsPage() {
   useEffect(() => {
     if (!quizId) return;
     let isMounted = true;
+    /** Retrieves quiz definition details for the requested quiz. */
     const fetchDefinition = async () => {
       setIsLoading(true);
       setError(null);
@@ -70,6 +75,7 @@ export default function StudentQuizDetailsPage() {
     };
   }, [quizId]);
 
+  /** Loads recent quiz sessions for this quiz and student. */
   const fetchHistory = useCallback(async () => {
     if (!quizId) return;
     setIsHistoryLoading(true);
@@ -94,6 +100,7 @@ export default function StudentQuizDetailsPage() {
     fetchHistory();
   }, [fetchHistory]);
 
+  /** Stores session metadata locally for quick resume and review. */
   const persistSessionMeta = (sessionId, payload) => {
     if (typeof window === "undefined") return;
     try {
@@ -103,6 +110,7 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Reads the active session id for this quiz from local storage. */
   const readActiveSessionId = () => {
     if (typeof window === "undefined" || !quizId) return null;
     try {
@@ -112,6 +120,7 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Persists the current active session id for this quiz. */
   const writeActiveSessionId = (sessionId) => {
     if (typeof window === "undefined" || !quizId) return;
     try {
@@ -121,6 +130,7 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Clears any stored active session pointer for this quiz. */
   const clearActiveSessionId = () => {
     if (typeof window === "undefined" || !quizId) return;
     try {
@@ -130,6 +140,7 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Attempts to resume an in-progress session; optionally navigates to it. */
   const tryResumeExistingSession = useCallback(async ({ navigate = false } = {}) => {
     const existingSessionId = readActiveSessionId();
     if (!existingSessionId) return false;
@@ -177,6 +188,7 @@ export default function StudentQuizDetailsPage() {
     };
   }, [tryResumeExistingSession]);
 
+  /** Starts or resumes a quiz attempt and routes to the session runner. */
   const handleStartAttempt = async () => {
     if (!quizId || !quiz) return;
     setIsStartingAttempt(true);
@@ -227,12 +239,14 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Routes to a completed session to view results. */
   const handleViewResults = (sessionId) => {
     router.push(
       `/Student/Quizzes/${encodeURIComponent(quizId)}/sessions/${encodeURIComponent(sessionId)}?mode=review`
     );
   };
 
+  /** Deletes a stored session and refreshes the history list. */
   const handleDeleteSession = async (sessionId) => {
     if (!sessionId) return;
     try {
@@ -256,11 +270,13 @@ export default function StudentQuizDetailsPage() {
     }
   };
 
+  /** Formats an accuracy ratio as a percentage string. */
   const formatAccuracy = (accuracy) => {
     const value = typeof accuracy === "number" ? accuracy : 0;
     return `${Math.round(value * 100)}%`;
   };
 
+  /** Formats a millisecond duration as a friendly string. */
   const formatDuration = (durationMs) => {
     if (typeof durationMs !== "number" || durationMs <= 0) return "—";
     const totalSeconds = Math.round(durationMs / 1000);
@@ -272,6 +288,7 @@ export default function StudentQuizDetailsPage() {
     return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
   };
 
+  /** Formats ISO timestamps into a compact readable value. */
   const formatTimestamp = (value) => {
     if (!value) return "—";
     const date = new Date(value);

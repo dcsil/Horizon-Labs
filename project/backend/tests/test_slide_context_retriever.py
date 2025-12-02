@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Tests slide context retrieval against Pinecone filters and coverage resets."""
+
 from typing import Any, Dict, List, Optional, Sequence
 
 import pytest

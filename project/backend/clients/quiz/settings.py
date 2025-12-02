@@ -1,3 +1,6 @@
+"""Quiz service settings: adaptive difficulty thresholds, RAG retrieval sampling, and coverage.
+Loads values from env/.env for quiz delivery behavior."""
+
 from __future__ import annotations
 
 import os
@@ -9,7 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class QuizSettings(BaseModel):
-    """Configuration parameters for quiz delivery."""
+    """Configuration parameters controlling quiz difficulty adaptation and retrieval sampling."""
 
     practice_increase_streak: int = Field(
         default=3,

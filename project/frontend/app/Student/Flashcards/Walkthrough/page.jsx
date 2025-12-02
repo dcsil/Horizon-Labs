@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -32,6 +32,9 @@ const deckWalkthroughCards = [
   },
 ];
 
+/**
+ * Static walkthrough that demonstrates reviewing a demo flashcard deck.
+ */
 export default function FlashcardWalkthroughPage() {
   const router = useRouter();
   const [index, setIndex] = useState(0);
@@ -40,8 +43,10 @@ export default function FlashcardWalkthroughPage() {
   const currentCard = useMemo(() => deckWalkthroughCards[index], [index]);
   const total = deckWalkthroughCards.length;
 
+  /** Reveals the current card's answer. */
   const handleReveal = () => setRevealed(true);
 
+  /** Records the result for the current card and advances the walkthrough. */
   const advance = (didGetItRight) => {
     setProgress((prev) => ({
       correct: prev.correct + (didGetItRight ? 1 : 0),

@@ -1,3 +1,5 @@
+"""Retrieves slide/page chunks from Pinecone for question generation, using Google embeddings."""
+
 from __future__ import annotations
 
 import random
@@ -42,6 +44,7 @@ class SlideContextRetriever:
         coverage_threshold: float = 0.7,
         sample_size: int = 4,
     ) -> Tuple[List[RetrievedContext], bool]:
+        """Query Pinecone for slide/page chunks, respecting coverage filters and sampling."""
         if not document_id:
             return ([], False)
 
@@ -68,6 +71,7 @@ class SlideContextRetriever:
                 return None
             return {"slide_id": {"$nin": clipped}}
 
+        # Core vector search against Pinecone to fetch slide/page chunks for question grounding.
         response = repository.query(
             vector=vector,
             top_k=limit,
@@ -88,6 +92,11 @@ class SlideContextRetriever:
         if ratio is not None and ratio >= coverage_threshold:
             coverage_reset_needed = True
 
+        # NOTE (citation accuracy): We shuffle matches to diversify coverage, so "first match"
+        # is random. If a caller assumes index 0 is the most relevant chunk and uses it for
+        # citations, the slide/page reference will be wrong. To keep randomness but preserve
+        # provenance, callers need to carry the full (shuffled) context list through question
+        # generation and store whatever subset the model actually saw, not just the first item.
         if matches:
             random.shuffle(matches)
         if len(matches) > sample_size > 0:
@@ -109,11 +118,13 @@ class SlideContextRetriever:
         return contexts, coverage_reset_needed
 
     def _ensure_repository(self) -> PineconeRepository:
+        """Lazy-init the Pinecone repository if none was injected."""
         if self._repository is None:
             self._repository = PineconeRepository(self._settings)
         return self._repository
 
     def _ensure_embedder(self):
+        """Lazy-init GoogleGenerativeAIEmbeddings for retrieval if none was injected."""
         if self._embedder is not None:
             return self._embedder
         if not self._settings.google_api_key:
@@ -134,7 +145,8 @@ class SlideContextRetriever:
 
     @staticmethod
     def _build_query(*, topic: str, difficulty: str) -> str:
-        base_topic = topic or "general computer science"
+        """Compose a retrieval prompt that conditions on topic and difficulty."""
+        base_topic = topic or "general"
         base_difficulty = difficulty or "medium"
         return (
             f"{base_topic} key ideas suitable for a {base_difficulty} difficulty question. "

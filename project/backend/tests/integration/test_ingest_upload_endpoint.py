@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Integration test for ingest upload endpoint wiring through the pipeline."""
+
 import json
 from typing import Any, Dict, List
 

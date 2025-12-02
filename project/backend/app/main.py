@@ -1,3 +1,7 @@
+"""FastAPI application that exposes chat and quiz APIs backed by LLMService and QuizService.
+Handles chat streaming, document ingestion, quiz lifecycle management, and analytics with
+FastAPI routing, CORS middleware, and optional lightweight telemetry hooks."""
+
 from __future__ import annotations
 
 import json
@@ -89,27 +93,25 @@ except Exception as exc:  # pragma: no cover - optional runtime component
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
-    # Simple uptime probe for orchestrators and frontend checks.
+    """Simple uptime probe for orchestrators and frontend checks."""
     return {"status": "ok"}
 
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Root endpoint. Returns the same payload as /health so GET / doesn't 404 on platforms
-    (Render, Vercel health checks, or browser requests).
-    """
+    """Mirror of /health for platform health checks and browser probes."""
     return {"status": "ok"}
 
 
 @app.head("/health")
 def health_head() -> Response:
-    """Respond to HEAD probes for /health."""
+    """Respond to HEAD probes for /health without a body payload."""
     return Response(status_code=200)
 
 
 @app.head("/")
 def root_head() -> Response:
-    """Respond to HEAD probes for root path."""
+    """Respond to HEAD probes for root path without a body payload."""
     return Response(status_code=200)
 
 
@@ -118,6 +120,7 @@ async def chat_stream(
     request: ChatStreamRequest,
     llm_service: LLMService = Depends(get_llm_service),
 ) -> StreamingResponse:
+    """Stream chat responses from LLMService via SSE for a given session/message payload."""
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
@@ -152,6 +155,7 @@ async def chat_reset(
     request: ChatResetRequest,
     llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, str]:
+    """Clear stored chat state for a session using LLMService."""
     llm_service.reset_session(request.session_id)
     return {"status": "reset"}
 
@@ -161,7 +165,7 @@ async def chat_history(
     session_id: str = Query(..., description="Session identifier to fetch"),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> ChatHistoryResponse:
-    """Return persisted chat turns for the requested session."""
+    """Return persisted chat turns for the requested session from LLMService."""
     history = llm_service.get_chat_history(session_id)
     return ChatHistoryResponse(**history)
 
@@ -170,9 +174,10 @@ async def chat_history(
 def chat_sessions(
     llm_service: LLMService = Depends(get_llm_service),
 ) -> ChatSessionListResponse:
-    """Return all known chat sessions."""
+    """List all chat sessions known to LLMService."""
     sessions = llm_service.list_sessions()
     return ChatSessionListResponse(sessions=sessions)
+
 
 @app.get("/analytics/chats", response_model=ChatAnalyticsResponse)
 def get_chat_analytics(
@@ -180,6 +185,7 @@ def get_chat_analytics(
     user_id: str | None = Query(default=None),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> ChatAnalyticsResponse:
+    """Aggregate chat usage analytics from LLMService, optionally scoped by quiz/user."""
     data = llm_service.get_analytics(quiz_id=quiz_id, user_id=user_id)
     return ChatAnalyticsResponse(**data)
 
@@ -190,6 +196,7 @@ def get_quiz_analytics(
     user_id: str | None = Query(default=None),
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizAnalyticsResponse:
+    """Return quiz analytics from QuizService, filtered by quiz or learner when provided."""
     data = quiz_service.get_quiz_analytics(quiz_id=quiz_id, user_id=user_id)
     return QuizAnalyticsResponse(**data)
 
@@ -199,6 +206,7 @@ def friction_state(
     session_id: str = Query(..., description="Session to inspect"),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, object]:
+    """Expose internal LLMService session state for debugging friction cases."""
     state = llm_service.get_session_state(session_id)
     return {"session_id": session_id, **state}
 
@@ -211,7 +219,7 @@ async def ingest_upload(
     metadata: str | None = Form(None, description="Optional JSON metadata for the document"),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, object]:
-    """Upload a slide deck for ingestion into the vector index."""
+    """Upload a document for LLMService ingestion into the vector index for chat grounding."""
 
     metadata_dict = None
     if metadata:
@@ -246,6 +254,7 @@ async def ingest_delete_document(
     document_id: str,
     llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, str]:
+    """Delete an ingested document from the vector index via LLMService."""
     try:
         await llm_service.delete_document(document_id)
     except RuntimeError as exc:
@@ -259,6 +268,7 @@ def quiz_upsert_definition(
     request: QuizDefinitionRequest,
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizDefinitionResponse:
+    """Create or update a quiz definition in QuizService, validating generation inputs."""
     try:
         record = quiz_service.upsert_quiz_definition(
             quiz_id=request.quiz_id,
@@ -285,6 +295,7 @@ def quiz_get_definition(
     quiz_id: str,
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizDefinitionResponse:
+    """Fetch a single quiz definition by id from QuizService."""
     try:
         record = quiz_service.get_quiz_definition(quiz_id)
     except QuizDefinitionNotFoundError as exc:
@@ -296,6 +307,7 @@ def quiz_get_definition(
 def quiz_list_definitions(
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> List[QuizDefinitionResponse]:
+    """List all quiz definitions available in QuizService."""
     records = quiz_service.list_quiz_definitions()
     return [_serialize_quiz_definition(record) for record in records]
 
@@ -307,6 +319,7 @@ def quiz_list_sessions(
     limit: int = Query(10, ge=1, le=100, description="Maximum number of sessions to return"),
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizSessionHistoryResponse:
+    """Return recent session summaries for a learner and quiz id from QuizService."""
     summaries = quiz_service.list_session_history(quiz_id=quiz_id, user_id=user_id, limit=limit)
     items = [_serialize_history_item(summary) for summary in summaries]
     return QuizSessionHistoryResponse(sessions=items)
@@ -318,6 +331,7 @@ async def quiz_delete_definition(
     quiz_service: QuizService = Depends(get_quiz_service),
     llm_service: LLMService = Depends(get_llm_service),
 ) -> dict[str, str]:
+    """Delete a quiz definition and its associated embedding document if present."""
     try:
         definition = quiz_service.get_quiz_definition(quiz_id)
     except QuizDefinitionNotFoundError as exc:
@@ -345,6 +359,7 @@ def quiz_start_session(
     request: QuizStartRequest,
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizSessionResponse:
+    """Start a quiz session for a learner using QuizService with optional preview mode."""
     try:
         record = quiz_service.start_session(
             session_id=request.session_id,
@@ -374,6 +389,7 @@ def quiz_next_question(
     ),
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizQuestionResponse:
+    """Serve the next quiz question from QuizService, allowing topic/difficulty overrides."""
     try:
         question = quiz_service.get_next_question(
             session_id,
@@ -405,6 +421,7 @@ def quiz_submit_answer(
     request: QuizAnswerRequest,
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizAnswerResponse:
+    """Submit an answer to QuizService and return correctness plus optional session summary."""
     try:
         outcome = quiz_service.submit_answer(
             session_id=session_id,
@@ -442,6 +459,7 @@ def quiz_end_session(
     session_id: str,
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizSummaryResponse:
+    """Force-complete a quiz session and return aggregated performance metrics."""
     try:
         summary = quiz_service.end_session(session_id)
     except QuizSessionNotFoundError as exc:
@@ -456,6 +474,7 @@ def quiz_get_session(
     user_id: str = Query(..., description="Learner identifier requesting the review"),
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> QuizSessionReviewResponse:
+    """Return a completed session review with attempts for the requesting learner."""
     try:
         result = quiz_service.get_session_review(session_id, user_id=user_id)
     except QuizSessionNotFoundError as exc:
@@ -477,6 +496,7 @@ def quiz_delete_session(
     ),
     quiz_service: QuizService = Depends(get_quiz_service),
 ) -> dict[str, str]:
+    """Delete a quiz session; uses learner id for completed sessions or preview deletion otherwise."""
     try:
         if user_id:
             quiz_service.delete_session_record(session_id, user_id=user_id)
@@ -490,6 +510,7 @@ def quiz_delete_session(
 
 
 def _serialize_quiz_definition(record) -> QuizDefinitionResponse:
+    """Map QuizService definition model to API response schema."""
     return QuizDefinitionResponse(
         quiz_id=record.quiz_id,
         name=record.name,
@@ -509,6 +530,7 @@ def _serialize_quiz_definition(record) -> QuizDefinitionResponse:
 
 
 def _serialize_quiz_session(record) -> QuizSessionResponse:
+    """Map QuizService session model to API response schema."""
     return QuizSessionResponse(
         session_id=record.session_id,
         quiz_id=record.quiz_id,
@@ -525,6 +547,7 @@ def _serialize_quiz_session(record) -> QuizSessionResponse:
 
 
 def _serialize_quiz_summary(summary: Dict[str, object]) -> QuizSummaryResponse:
+    """Normalize summary payloads from QuizService into the public response model."""
     topics_payload = {
         topic: TopicPerformance(**metrics)
         for topic, metrics in (summary.get("topics", {}) or {}).items()
@@ -551,6 +574,7 @@ def _serialize_quiz_summary(summary: Dict[str, object]) -> QuizSummaryResponse:
 
 
 def _serialize_history_item(summary: Dict[str, object]) -> QuizSessionHistoryItem:
+    """Transform a stored session summary dict into a history list item."""
     return QuizSessionHistoryItem(
         session_id=str(summary.get("session_id")),
         quiz_id=str(summary.get("quiz_id")),
@@ -568,6 +592,7 @@ def _serialize_history_item(summary: Dict[str, object]) -> QuizSessionHistoryIte
 
 
 def _serialize_attempt_detail(payload: Dict[str, object]) -> QuizAttemptReviewResponse:
+    """Shape a raw attempt payload from QuizService into the review response schema."""
     return QuizAttemptReviewResponse(
         question_id=str(payload.get("question_id")),
         prompt=str(payload.get("prompt", "")),

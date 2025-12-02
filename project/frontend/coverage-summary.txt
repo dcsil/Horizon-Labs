@@ -1,0 +1,4 @@
+## Frontend Test Coverage
+- Line coverage: 61.70%
+- Branch coverage: 45.31%
+- Lines covered: 3736 / 6055

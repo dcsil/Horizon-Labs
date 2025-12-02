@@ -1,3 +1,7 @@
+"""Settings for LLMService, classifier, embeddings, and Pinecone/RAG integration.
+Loads OpenRouter credentials, model names, telemetry, friction thresholds, and ingest options
+from environment variables and .env."""
+
 from __future__ import annotations
 
 import os
@@ -9,7 +13,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 class Settings(BaseModel):
-    """Minimal configuration needed to talk to OpenRouter."""
+    """Configuration for LLM/chat, classifier, embeddings, and vector store connections."""
 
     openrouter_api_key: str = Field(..., description="API key for OpenRouter")
     openrouter_base_url: str = Field(
@@ -72,7 +76,7 @@ class Settings(BaseModel):
     )
     google_embeddings_model_name: str = Field(
         default="models/gemini-embedding-001",
-        description="Gemini embedding model used for RAG workflows",
+        description="Gemini embedding model used for RAG workflows (OpenRouter embeddings are separate)",
     )
     pinecone_api_key: str | None = Field(
         default=None,
@@ -123,6 +127,7 @@ def get_settings() -> Settings:
     if ingest_batch_size < 1:
         ingest_batch_size = 64
 
+    # Load OpenRouter, embeddings, and vector-store credentials; used by chat, classifier, and ingestion.
     return Settings(
         openrouter_api_key=api_key,
         openrouter_base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),

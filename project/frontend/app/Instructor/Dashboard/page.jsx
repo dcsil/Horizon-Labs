@@ -17,19 +17,23 @@ const heroSubtitleClasses = `text-base sm:text-lg text-gray-500 ${poppins.classN
 
 const MAX_MONTH_HISTORY = 4;
 
+/** Normalises a Date to midnight UTC to align daily analytics buckets. */
 const normaliseUTCDate = (date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 
+/** Returns a YYYY-MM-DD key for a given date. */
 const getDateKey = (date) => {
   const normalised = normaliseUTCDate(date);
   return normalised.toISOString().split("T")[0];
 };
 
+/** Formats a date into a short string like "Jan 1". */
 const formatDateShort = (date) =>
   date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
   });
 
+/** Formats a date range label for weekly and monthly charts. */
 const formatDateRangeLabel = (start, end) => {
   if (!(start instanceof Date) || Number.isNaN(start.getTime())) return "--";
   if (!(end instanceof Date) || Number.isNaN(end.getTime())) return formatDateShort(start);
@@ -38,6 +42,7 @@ const formatDateRangeLabel = (start, end) => {
   return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
 };
 
+/** Returns the start of the UTC week for the given date. */
 const getStartOfWeek = (date) => {
   const utcDate = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const dayOfWeek = utcDate.getUTCDay();
@@ -46,6 +51,7 @@ const getStartOfWeek = (date) => {
 };
 
 
+/** Clamps a ratio to a whole-number percentage. */
 const formatPercent = (value) => {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return 0;
@@ -54,6 +60,7 @@ const formatPercent = (value) => {
   return Math.round(clamped * 100);
 };
 
+/** Returns a cleaned topic label or fallback if empty. */
 const getTopicLabel = (topic) => {
   if (typeof topic === "string" && topic.trim()) {
     return topic;
@@ -61,6 +68,9 @@ const getTopicLabel = (topic) => {
   return "General";
 };
 
+/**
+ * Instructor analytics dashboard that aggregates quiz and chat metrics.
+ */
 export default function InstructorDashboard() {
   const [quizAnalytics, setQuizAnalytics] = useState(null);
   const [quizFetchedAt, setQuizFetchedAt] = useState(null);
@@ -70,6 +80,7 @@ export default function InstructorDashboard() {
   useEffect(() => {
     let isMounted = true;
 
+    /** Fetches quiz-level analytics from the backend and stores them locally. */
     const fetchQuizAnalytics = async () => {
       setIsQuizLoading(true);
       setQuizError(null);
@@ -102,6 +113,7 @@ export default function InstructorDashboard() {
 
   const practiceQuizzes = Array.isArray(quizAnalytics?.quizzes) ? quizAnalytics.quizzes : [];
 
+  /** Derives headline quiz stats such as total sessions and accuracy. */
   const aggregateQuizStats = useMemo(() => {
     const totalSessions = quizAnalytics?.total_sessions ?? 0;
     const averageAccuracy = formatPercent(quizAnalytics?.average_accuracy ?? 0);
@@ -110,6 +122,7 @@ export default function InstructorDashboard() {
     return { averageAccuracy, totalSessions, totalQuestions };
   }, [quizAnalytics]);
 
+  /** Formats the timestamp the quiz analytics were last fetched. */
   const formattedGeneratedAt = useMemo(() => {
     if (!quizFetchedAt) return "--";
     const date = new Date(quizFetchedAt);
@@ -127,6 +140,7 @@ export default function InstructorDashboard() {
   useEffect(() => {
     let isMounted = true;
 
+    /** Fetches chat analytics aggregates used by the trend visualizations. */
     const fetchChatAnalytics = async () => {
       setIsChatLoading(true);
       setChatError(null);
@@ -156,6 +170,7 @@ export default function InstructorDashboard() {
     };
   }, []);
 
+  /** Normalises and sorts chat daily trend data for charting. */
   const processedDailyTrend = useMemo(() => {
     if (!chatAnalytics) {
       return [];
@@ -208,6 +223,7 @@ export default function InstructorDashboard() {
     return filledDays;
   }, [chatAnalytics]);
 
+  /** Groups normalized chat data into weekly buckets. */
   const weeklyBuckets = useMemo(() => {
     if (processedDailyTrend.length === 0) {
       return [];
@@ -236,6 +252,7 @@ export default function InstructorDashboard() {
     return buckets;
   }, [processedDailyTrend]);
 
+  /** Aggregates weekly buckets into months for the monthly trend view. */
   const monthlyBuckets = useMemo(() => {
     if (weeklyBuckets.length === 0) {
       return [];
@@ -301,6 +318,7 @@ export default function InstructorDashboard() {
   const currentWeek = weeklyBuckets[weekCursor] || null;
   const currentMonth = monthlyBuckets[monthCursor] || null;
 
+  /** Shapes data for the weekly chat bar chart. */
   const weekChartData = useMemo(() => {
     if (!currentWeek) {
       return [];
@@ -314,6 +332,7 @@ export default function InstructorDashboard() {
     }));
   }, [currentWeek]);
 
+  /** Shapes data for the monthly chat bar chart. */
   const monthChartData = useMemo(() => {
     if (!currentMonth) {
       return [];
@@ -329,6 +348,7 @@ export default function InstructorDashboard() {
 
   const chartBarData = chatViewMode === "week" ? weekChartData : monthChartData;
 
+  /** Sums chat counts for the current view to show totals and helpful percentages. */
   const chatTotals = useMemo(() => {
     if (chartBarData.length === 0) {
       const fallbackTotals = chatAnalytics?.totals;
@@ -350,6 +370,7 @@ export default function InstructorDashboard() {
     return { good, needs, total, goodPercent: total ? Math.round((good / total) * 100) : 0 };
   }, [chartBarData, chatAnalytics]);
 
+  /** Determines the maximum bar value to scale visual heights. */
   const maxDailyValue = useMemo(() => {
     if (chartBarData.length === 0) return 1;
     return Math.max(
@@ -360,6 +381,7 @@ export default function InstructorDashboard() {
     );
   }, [chartBarData]);
 
+  /** Produces a label describing the current chart date range. */
   const rangeLabel = useMemo(() => {
     if (chatViewMode === "week") {
       return currentWeek ? `Week of ${formatDateRangeLabel(currentWeek.startDate, currentWeek.endDate)}` : "No week data";
@@ -372,6 +394,7 @@ export default function InstructorDashboard() {
   const canGoOlderMonth = monthCursor < monthlyBuckets.length - 1;
   const canGoNewerMonth = monthCursor > 0;
 
+  /** Moves the trend cursor backwards one interval if available. */
   const goPreviousRange = () => {
     if (chatViewMode === "week" && canGoOlderWeek) {
       setWeekCursor((prev) => Math.min(prev + 1, weeklyBuckets.length - 1));
@@ -381,6 +404,7 @@ export default function InstructorDashboard() {
     }
   };
 
+  /** Moves the trend cursor forward one interval if available. */
   const goNextRange = () => {
     if (chatViewMode === "week" && canGoNewerWeek) {
       setWeekCursor((prev) => Math.max(prev - 1, 0));

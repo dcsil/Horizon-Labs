@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Validates slide ingestion pipeline parsing, chunking, embeddings, and upserts."""
+
 from io import BytesIO
 from typing import Any, Dict, List, Sequence
 

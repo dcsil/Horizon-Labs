@@ -1,3 +1,6 @@
+"""Quiz question generator: uses ChatOpenAI (OpenRouter/OpenAI compatible) to create MCQs
+grounded in retrieved slide/page contexts."""
+
 from __future__ import annotations
 
 import json
@@ -38,6 +41,7 @@ class QuizQuestionGenerator:
         temperature: float = 0.4,
     ) -> None:
         settings = llm_settings or get_settings()
+        # Initialize OpenRouter/OpenAI-compatible ChatOpenAI client for question generation.
         self._model = ChatOpenAI(
             model=settings.model_name,
             temperature=temperature,
@@ -54,6 +58,7 @@ class QuizQuestionGenerator:
         order: int,
         contexts: Optional[Sequence[Dict[str, object]]] = None,
     ) -> GeneratedQuestion:
+        """Generate a single MCQ grounded (when provided) in retrieved slide/page contexts."""
         instructions = (
             "You are an instructional design assistant. "
             "Write a single multiple-choice question that checks conceptual understanding. "
@@ -78,6 +83,7 @@ class QuizQuestionGenerator:
         if context_block:
             learner_prompt += f"\n\nSource Material:\n{context_block}"
 
+        # Core LLM call: synthesize a grounded MCQ from topic/difficulty and retrieved contexts.
         response = self._model.invoke(
             [
                 SystemMessage(content=instructions),
@@ -128,6 +134,7 @@ class QuizQuestionGenerator:
 
     @staticmethod
     def _render_context_block(contexts: Optional[Sequence[Dict[str, object]]]) -> str:
+        """Format retrieved contexts (slide/page excerpts) for inclusion in the prompt."""
         if not contexts:
             return ""
         rendered: List[str] = []

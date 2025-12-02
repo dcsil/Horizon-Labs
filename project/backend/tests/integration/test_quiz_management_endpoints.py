@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Integration coverage for quiz definition CRUD and session flows."""
+
 import pytest
 
 

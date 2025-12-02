@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -16,6 +16,9 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 const DELETE_INGEST_ENDPOINT = `${API_BASE_URL}/ingest/document`;
 const QUIZ_DEFINITION_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
+/**
+ * Practice quiz builder for instructors to configure adaptive sessions.
+ */
 export default function PracticePage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -35,6 +38,9 @@ export default function PracticePage() {
   const hydratedDefinitionIdRef = useRef(null);
   const isHydratingRef = useRef(true);
 
+  /**
+   * Hydrates the practice builder from a saved quiz definition.
+   */
   const hydrateFromDefinition = useCallback(async (quizId) => {
     if (!quizId) return;
     try {
@@ -155,6 +161,7 @@ export default function PracticePage() {
     hydrateFromDefinition(existingQuizId);
   }, [existingQuizId, hydrateFromDefinition]);
 
+  /** Saves preview metadata for the quiz runner flow. */
   const persistPreviewState = (metaPayload) => {
     try {
       if (typeof window === "undefined") return;
@@ -167,10 +174,12 @@ export default function PracticePage() {
     }
   };
 
+  /** Tracks topic input field changes. */
   const handleTopicInputChange = (e) => {
     setTopicInput(e.target.value);
   };
 
+  /** Adds a new topic tag if it's unique and non-empty. */
   const handleAddTopic = () => {
     const cleanedTopic = topicInput.trim();
     if (!cleanedTopic || topics.includes(cleanedTopic)) {
@@ -181,10 +190,12 @@ export default function PracticePage() {
     setTopicInput("");
   };
 
+  /** Removes a selected topic from the list. */
   const handleRemoveTopic = (topicToRemove) => {
     setTopics((prev) => prev.filter((topic) => topic !== topicToRemove));
   };
 
+  /** Deletes the associated ingest document from the index if present. */
   const deleteDocumentFromIndex = async () => {
     if (!documentId) return;
     try {
@@ -196,6 +207,7 @@ export default function PracticePage() {
     }
   };
 
+  /** Deletes the quiz definition from the backend. */
   const deleteQuizDefinition = async (quizId) => {
     if (!quizId) return;
     try {
@@ -207,6 +219,7 @@ export default function PracticePage() {
     }
   };
 
+  /** Briefly surfaces a success status message in the UI. */
   const showSaveSuccess = (message = "Saved to your list.") => {
     setSaveStatus(message);
     if (saveStatusTimeoutRef.current) {
@@ -217,6 +230,7 @@ export default function PracticePage() {
     }, 4000);
   };
 
+  /** Persists the quiz and routes to the preview runner. */
   const handlePreviewQuiz = async () => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -249,10 +263,12 @@ export default function PracticePage() {
     }
   };
 
+  /** Toggles publish status by re-saving the quiz definition. */
   const handlePublishQuiz = async () => {
     await saveQuizRecord({ publishState: !isPublished });
   };
 
+  /** Creates or updates the practice quiz definition via the backend. */
   const saveQuizRecord = async ({ publishState } = {}) => {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
@@ -323,10 +339,12 @@ export default function PracticePage() {
     }
   };
 
+  /** Saves the quiz configuration as a draft. */
   const handleSaveQuiz = async () => {
     await saveQuizRecord();
   };
 
+  /** Opens delete confirmation after verifying the quiz exists. */
   const handleDeleteQuiz = () => {
     if (!existingQuizId) {
       alert("Save this quiz first before trying to delete it.");
@@ -335,6 +353,7 @@ export default function PracticePage() {
     setIsDeleteModalOpen(true);
   };
 
+  /** Confirms deletion, cleans up data, and returns to the quiz list. */
   const confirmDeleteQuiz = async () => {
     if (!existingQuizId) return;
     await deleteDocumentFromIndex();
@@ -351,14 +370,17 @@ export default function PracticePage() {
     router.push("/Instructor/Quizzes");
   };
 
+  /** Cancels the delete confirmation modal. */
   const cancelDeleteQuiz = () => {
     setIsDeleteModalOpen(false);
   };
 
+  /** Opens the exit confirmation modal. */
   const handleBackToQuizList = () => {
     setIsExitModalOpen(true);
   };
 
+  /** Leaves the page, deleting the ingest document if nothing is saved. */
   const handleLeaveWithoutSaving = async () => {
     setIsExitModalOpen(false);
     if (!existingQuizId && !isHydratingRef.current) {
@@ -369,6 +391,7 @@ export default function PracticePage() {
     router.push("/Instructor/Quizzes");
   };
 
+  /** Saves changes then navigates back to the quiz list. */
   const handleSaveAndExit = async () => {
     const saved = await saveQuizRecord();
     if (saved) {
@@ -377,6 +400,7 @@ export default function PracticePage() {
     }
   };
 
+  /** Keeps the user on the page and closes the modal. */
   const handleStayOnPage = () => {
     setIsExitModalOpen(false);
   };

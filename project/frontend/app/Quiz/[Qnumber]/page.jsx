@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -14,6 +14,7 @@ const QUIZ_SESSION_ENDPOINT = `${API_BASE_URL}/quiz/session`;
 const DEFAULT_META = { mode: "practice" };
 const OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/** Safely parses JSON strings, returning null on failure. */
 const safeParse = (value) => {
   if (!value) return null;
   try {
@@ -24,6 +25,7 @@ const safeParse = (value) => {
   }
 };
 
+/** Normalizes a question payload into a UI-friendly structure with labeled options. */
 const normalizeQuestion = (payload) => {
   const options = (payload.choices || []).map((choice, index) => ({
     id: OPTION_LETTERS[index] || `Option-${index + 1}`,
@@ -35,6 +37,9 @@ const normalizeQuestion = (payload) => {
   };
 };
 
+/**
+ * Preview quiz runner used by instructors to try assessment/practice flows.
+ */
 export default function QuizPage() {
   const router = useRouter();
 
@@ -52,11 +57,14 @@ export default function QuizPage() {
   const cleanupRequestedRef = useRef(false);
   const initialQuestionRequestedRef = useRef(false);
   const [rateLimitNotice, setRateLimitNotice] = useState(null);
+
+  /** Reads the persisted preview session metadata for resuming the run. */
   const readStoredPreviewSession = useCallback(() => {
     if (typeof window === "undefined") return null;
     return safeParse(localStorage.getItem("quizPreviewSession"));
   }, []);
 
+  /** Writes preview session metadata to storage and resets cleanup flags. */
   const writeStoredPreviewSession = useCallback((payload) => {
     if (typeof window === "undefined") return;
     try {
@@ -67,6 +75,7 @@ export default function QuizPage() {
     }
   }, []);
 
+  /** Loads preview metadata cached from the builder flows. */
   const readStoredPreviewMeta = useCallback(() => {
     if (typeof window === "undefined") return DEFAULT_META;
     return safeParse(localStorage.getItem("quizPreviewData")) || DEFAULT_META;
@@ -89,6 +98,7 @@ export default function QuizPage() {
     return [];
   }, [meta]);
 
+  /** Shows a temporary rate-limit notice when the backend throttles requests. */
   const showRateLimitNotice = useCallback(() => {
     setRateLimitNotice(
       "We're hitting a temporary content generation limit. Please wait a moment and try again."
@@ -124,6 +134,7 @@ export default function QuizPage() {
     return topicsSequence.length ? topicsSequence : ["General"];
   }, [meta, topicsSequence, sessionInfo, readStoredPreviewSession]);
 
+  /** Determines the starting difficulty from session or metadata. */
   const deriveInitialDifficulty = useCallback(
     (sessionCandidate, metaCandidate) => {
       const metaDifficulty =
@@ -139,6 +150,7 @@ export default function QuizPage() {
     []
   );
 
+  /** Starts a new preview session for instructors using stored metadata. */
   const createPreviewSession = useCallback(async () => {
     const fallbackMeta = readStoredPreviewMeta();
     const activeMeta = meta?.quizId || meta?.id ? meta : fallbackMeta;
@@ -198,6 +210,8 @@ export default function QuizPage() {
     }
     setIsLoading(false);
   }, [deriveInitialDifficulty, readStoredPreviewMeta, readStoredPreviewSession]);
+
+  /** Requests the next preview question, creating a session if none exists. */
   const requestQuestion = useCallback(
     async ({ topicOverride, difficultyOverride, isInitial = false } = {}) => {
       setIsFetchingQuestion(true);
@@ -276,11 +290,13 @@ export default function QuizPage() {
   const currentQuestion = currentEntry?.question || null;
   const currentResponse = currentEntry?.response || null;
 
+  /** Selects an answer choice for the active question. */
   const handleAnswerSelect = (optionId) => {
     if (currentResponse) return;
     setSelectedAnswerId(optionId);
   };
 
+  /** Submits the selected answer to the backend and updates history. */
   const handleSubmit = async () => {
     if (!currentQuestion || !selectedAnswerId || !sessionInfo) {
       alert("Please select an answer before submitting.");
@@ -326,16 +342,19 @@ export default function QuizPage() {
     }
   };
 
+  /** Moves to a specific question index, clamping to bounds. */
   const goToQuestion = (index) => {
     const clamped = Math.max(0, Math.min(index, history.length - 1));
     setCurrentIndex(clamped);
   };
 
+  /** Steps to the previous question if one exists. */
   const handlePreviousQuestion = () => {
     if (currentIndex === 0) return;
     goToQuestion(currentIndex - 1);
   };
 
+  /** Advances to the next question or fetches a new one if at the end. */
   const handleNextQuestion = async () => {
     if (currentIndex < history.length - 1) {
       goToQuestion(currentIndex + 1);
@@ -348,6 +367,7 @@ export default function QuizPage() {
     });
   };
 
+  /** Cleans up the preview session on exit or navigation away. */
   const cleanupPreviewSession = useCallback(async ({ useKeepAlive = false } = {}) => {
     if (!sessionInfo?.sessionId || cleanupRequestedRef.current) return;
     cleanupRequestedRef.current = true;
@@ -367,6 +387,7 @@ export default function QuizPage() {
 
   // Skip automatic cleanup on StrictMode double-invocation; rely on explicit exits.
 
+  /** Returns to the configuration page while persisting the latest draft metadata. */
   const handleReturnToConfig = async () => {
     const target = meta.mode === "practice" ? "/Instructor/Practice" : "/Instructor/Assessment";
     try {

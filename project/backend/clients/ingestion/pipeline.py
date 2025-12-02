@@ -1,3 +1,6 @@
+"""Slide/document ingestion pipeline for vector search: extracts text from PPTX/PDF, chunks,
+embeds via Google GenAI, and upserts to Pinecone with dimension validation."""
+
 from __future__ import annotations
 
 import io
@@ -30,6 +33,7 @@ class SlideChunk:
     source_type: str = "slide"
 
     def metadata(self) -> Dict[str, Any]:
+        """Return metadata describing the origin of this chunk (slide/page, index, title)."""
         payload: Dict[str, Any] = {
             "slide_number": self.slide_number,
             "chunk_index": self.chunk_index,
@@ -140,6 +144,7 @@ class SlideChunker:
         )
 
     def chunk(self, slides: Sequence[SlideChunk]) -> List[SlideChunk]:
+        """Split slide-level chunks into overlapping text segments."""
         processed: List[SlideChunk] = []
         for slide in slides:
             segments = self._splitter.split_text(slide.text)
@@ -180,6 +185,7 @@ class EmbeddingService:
         )
 
     async def embed(self, texts: Sequence[str]) -> List[List[float]]:
+        """Generate embeddings for a batch of texts using Google Generative AI embeddings."""
         payload = list(texts)
         if not payload:
             return []
@@ -214,6 +220,7 @@ class SlideIngestionPipeline:
         filename: str | None = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> IngestionResult:
+        """Process a PPTX/PDF file through extraction, chunking, embedding, and Pinecone upsert."""
         extractor = self._select_extractor(filename)
         slides = extractor.extract(file_bytes)
         chunked = self._chunker.chunk(slides)
@@ -234,6 +241,7 @@ class SlideIngestionPipeline:
 
         for batch in self._batched(chunked, batch_size):
             texts = [chunk.text for chunk in batch]
+            # Generate embeddings and upsert to Pinecone so downstream chat/quiz can retrieve with citations.
             vectors = await self._embedding_service.embed(texts)
             if not vectors:
                 continue
@@ -272,6 +280,7 @@ class SlideIngestionPipeline:
         )
 
     def _select_extractor(self, filename: str | None) -> SlideExtractor:
+        """Choose the correct extractor based on filename; defaults to PPTX extractor."""
         if not filename:
             return self._pptx_extractor
 
@@ -284,12 +293,14 @@ class SlideIngestionPipeline:
         raise RuntimeError("Unsupported file type for ingestion; expected .pptx or .pdf")
 
     def delete_document(self, document_id: str) -> None:
+        """Delete all vectors associated with a document id from Pinecone."""
         if not document_id:
             return
         self._repository.delete_document(document_id)
 
     @staticmethod
     def _batched(items: Sequence[SlideChunk], batch_size: int) -> Iterator[List[SlideChunk]]:
+        """Yield fixed-size batches from a list of slide chunks."""
         if batch_size <= 0:
             batch_size = 1
         for start in range(0, len(items), batch_size):
@@ -304,6 +315,7 @@ class SlideIngestionPipeline:
         document_id: str,
         snippet_chars: int,
     ) -> Dict[str, Any]:
+        """Build the Pinecone vector payload with merged metadata and optional snippet."""
         metadata_payload: Dict[str, Any] = {**base_metadata}
         metadata_payload.update(chunk.metadata())
         metadata_payload["document_id"] = document_id

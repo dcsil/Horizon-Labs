@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Integration smoke tests for root/health endpoints and chat session lifecycle."""
+
 from datetime import datetime, timezone
 import types
 

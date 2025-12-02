@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -8,6 +9,9 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
+/**
+ * Student dashboard landing page linking to chat, quizzes, and flashcards.
+ */
 export default function StudentHomePage() {
   const router = useRouter();
   const currentDate = new Date();
@@ -17,14 +21,17 @@ export default function StudentHomePage() {
     year: "numeric",
   });
 
+  /** Routes the student to the chat assistant page. */
   const handleChat = () => {
     router.push("/Student/chat");
   };
 
+  /** Routes the student to the quizzes list page. */
   const handleQuiz = () => {
     router.push("/Student/Quizzes");
   };
 
+  /** Opens the flashcards experience for students. */
   const handleFlashcards = () => {
     router.push("/Student/Flashcards");
   };
@@ -146,8 +153,11 @@ export default function StudentHomePage() {
                   </div>
                   <div className="flex-1">
                     <h2 className={`text-2xl font-bold text-emerald-900 mb-2 ${poppins.className}`}>
-                      Flashcards Lab (Preview)
+                      Flashcards Lab
                     </h2>
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 mb-2">
+                      Preview
+                    </span>
                     <p className={`text-base text-gray-600 ${poppins.className}`}>
                       Generate decks from course files and rehearse with active recall.
                     </p>

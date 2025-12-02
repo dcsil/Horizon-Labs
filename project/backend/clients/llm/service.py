@@ -1,3 +1,6 @@
+"""LLM service orchestrating chat sessions: streams model responses, tracks friction/guidance
+state, classifies learner turns, persists chat history, and ingests documents for retrieval."""
+
 from __future__ import annotations
 
 from collections import defaultdict, OrderedDict
@@ -56,6 +59,8 @@ class LLMService:
         metadata: Optional[Dict[str, Any]] = None,
         use_guidance: bool = False,
     ) -> AsyncGenerator[str, None]:
+        # Core chat streaming: invoke OpenRouter/OpenAI-compatible ChatOpenAI with SSE streaming.
+        # OpenRouter credentials/base URL come from Settings (openrouter_api_key/base_url).
         llm = ChatOpenAI(
             model=self._settings.model_name,
             streaming=True,
@@ -195,6 +200,7 @@ class LLMService:
         filename: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> IngestionResult:
+        """Ingest a deck/document for retrieval augmentation; wires session/file metadata."""
         pipeline = self._get_ingestion_pipeline()
         base_metadata: Dict[str, Any] = dict(metadata or {})
         base_metadata.setdefault("session_id", session_id)
@@ -463,7 +469,7 @@ class LLMService:
             role = self._coerce_role(message)
             if role == "system":
                 continue
-            # Return a lean payload tailored for the frontend UI.
+        # Return a lean payload tailored for the frontend UI.
             history.append(
                 {
                     "role": "user" if role == "human" else "assistant",

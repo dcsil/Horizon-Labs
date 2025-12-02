@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -18,6 +18,9 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 );
 const QUIZ_DEFINITIONS_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
+/**
+ * Lists existing quizzes for instructors and routes to creation or edit flows.
+ */
 export default function InstructorQuizzesPage() {
   const router = useRouter();
   const [quizzes, setQuizzes] = useState([]);
@@ -27,6 +30,7 @@ export default function InstructorQuizzesPage() {
   useEffect(() => {
     let isMounted = true;
 
+    /** Loads quiz definitions from the backend and stores them locally. */
     const fetchQuizzes = async () => {
       setIsLoading(true);
       setError(null);
@@ -58,6 +62,9 @@ export default function InstructorQuizzesPage() {
 
   const hasQuizzes = quizzes.length > 0;
 
+  /**
+   * Clears cached quiz drafts and previews before starting a new quiz.
+   */
   const clearDraftState = () => {
     if (typeof window === "undefined") return;
     const keys = [
@@ -77,11 +84,15 @@ export default function InstructorQuizzesPage() {
     }
   };
 
+  /** Starts the quiz creation flow in the generator page. */
   const handleCreateQuiz = () => {
     clearDraftState();
     router.push("/Instructor/QuizGenerator");
   };
 
+  /**
+   * Builds a persisted draft payload from a quiz definition for editing.
+   */
   const buildDraftFromDefinition = (quiz) => {
     const base = {
       id: quiz.quiz_id,
@@ -149,6 +160,9 @@ export default function InstructorQuizzesPage() {
     };
   };
 
+  /**
+   * Caches the quiz draft and routes to the correct editor based on mode.
+   */
   const handleOpenQuiz = (quiz) => {
     try {
       if (typeof window !== "undefined") {

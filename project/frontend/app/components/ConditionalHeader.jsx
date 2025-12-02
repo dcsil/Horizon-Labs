@@ -8,6 +8,9 @@ import { useEffect, useState } from "react";
 const ROLE_STORAGE_KEY = "role";
 const ROLE_EVENT = "role-updated";
 
+/**
+ * Renders a header that adapts role-based avatar and visibility based on the active route.
+ */
 export default function ConditionalHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -20,6 +23,7 @@ export default function ConditionalHeader() {
       setRole(stored);
     }
 
+    /** Updates role state when a cross-tab ROLE_EVENT is dispatched. */
     const handleRoleUpdated = (event) => {
       const nextRole = event?.detail;
       if (nextRole === "instructor" || nextRole === "student") {
@@ -35,6 +39,8 @@ export default function ConditionalHeader() {
 
   const isInstructorFlow = pathname.startsWith("/Instructor");
   const effectiveRole = isInstructorFlow ? "instructor" : role;
+
+  /** Sends the user to the correct home screen based on the active role. */
   const handleProfileClick = () => {
     const destination = effectiveRole === "instructor" ? "/Instructor" : "/Student";
     router.push(destination);
@@ -44,6 +50,9 @@ export default function ConditionalHeader() {
     return null;
   }
 
+  /**
+   * Builds the shared header markup with optional background color and profile toggle.
+   */
   const renderHeader = (backgroundClass = "bg-white", showProfile = true) => (
     <header className={`${backgroundClass} flex items-center justify-between px-10 py-4`}>
       <Link href="/" className="flex items-center gap-3">

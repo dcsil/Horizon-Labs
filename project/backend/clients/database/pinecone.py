@@ -1,3 +1,6 @@
+"""Pinecone vector index client wrapper used by the ingestion and retrieval pipeline.
+Responsible for upserting, deleting, and querying vectors with dimension safeguards."""
+
 from __future__ import annotations
 
 import logging
@@ -11,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class PineconeRepository:
-    """Thin wrapper around Pinecone vector operations used by the ingestion pipeline."""
+    """Wrapper around Pinecone vector operations used by the ingestion pipeline."""
 
     def __init__(self, settings: Settings) -> None:
+        """Initialize Pinecone client/index using settings-derived API key, env, and namespace."""
         if not settings.pinecone_api_key:
             raise RuntimeError("PINECONE_API_KEY is required to ingest documents")
         if not settings.pinecone_index_name:
@@ -38,6 +42,7 @@ class PineconeRepository:
             ) from exc
 
     def _fetch_index_dimension(self) -> int | None:
+        """Best-effort lookup of the index dimension from Pinecone metadata."""
         try:
             description = self._client.describe_index(self._index_name)
         except Exception:  # pragma: no cover - best-effort log
@@ -50,6 +55,7 @@ class PineconeRepository:
         return getattr(description, "dimension", None)
 
     def _resolve_dimension(self, fetched: Optional[int]) -> Optional[int]:
+        """Validate declared dimension against remote index and return the resolved size."""
         declared = self._declared_dimension
         if declared and fetched and declared != fetched:
             raise RuntimeError(
@@ -59,6 +65,7 @@ class PineconeRepository:
         return declared or fetched
 
     def _normalize_vectors(self, items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Normalize incoming vectors to match index dimension, padding or truncating as needed."""
         if not items or not self.dimension:
             return list(items)
 
@@ -75,6 +82,7 @@ class PineconeRepository:
         return normalized
 
     def _match_dimension(self, values: Sequence[float]) -> Optional[List[float]]:
+        """Ensure a single vector matches the index dimension; pad/truncate when necessary."""
         if not self.dimension:
             return list(values)
         if not values:
@@ -87,6 +95,7 @@ class PineconeRepository:
         return list(values) + padding
 
     def upsert(self, items: Sequence[Dict[str, Any]]) -> None:
+        """Insert or update vectors in Pinecone after normalizing dimensions."""
         if not items:
             return
         prepared = self._normalize_vectors(items)
@@ -95,6 +104,7 @@ class PineconeRepository:
         self._index.upsert(vectors=prepared, namespace=self.namespace)
 
     def delete_document(self, document_id: str) -> None:
+        """Delete all vectors tied to a document id using metadata filter."""
         if not document_id:
             return
         try:
@@ -115,6 +125,7 @@ class PineconeRepository:
         include_metadata: bool = True,
         metadata_filter: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """Run a similarity search with optional document scoping and metadata filters."""
         if not vector:
             return {}
         try:

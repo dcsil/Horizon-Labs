@@ -8,6 +8,9 @@ const poppins = Poppins({
   weight: ["400", "500", "600", "700"],
 });
 
+/**
+ * Instructor landing hub that links to quiz creation, analytics, and policy tools.
+ */
 export default function InstructorPage() {
   const router = useRouter();
 
@@ -18,12 +21,19 @@ export default function InstructorPage() {
     year: "numeric",
   });
 
+  /** Sends the instructor to the quiz management area. */
   const handleQuizGenerator = () => {
     router.push("/Instructor/Quizzes");
   };
 
+  /** Opens the analytics dashboard page. */
   const handleDashboard = () => {
     router.push("/Instructor/Dashboard");
+  };
+
+  /** Navigates to the AI/policy configuration preview. */
+  const handlePolicyServices = () => {
+    router.push("/Instructor/Policy");
   };
 
   return (
@@ -35,21 +45,19 @@ export default function InstructorPage() {
         {/* Main Content Area */}
         <div className="flex-1 bg-white relative z-10">
           <div className="min-h-[calc(100vh-4rem)] flex flex-col px-6 py-10 sm:px-10 lg:px-16">
-            <div className="flex flex-col max-w-3xl pt-10 sm:pt-12 lg:pt-16">
-              <div className="mb-8 sm:mb-10">
+            <div className="flex flex-col max-w-4xl pt-10 sm:pt-12 lg:pt-16">
+              <div className="mb-8 sm:mb-10 space-y-2">
                 <h1
-                  className={`text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 mb-3 ${poppins.className}`}
+                  className={`text-3xl sm:text-4xl md:text-5xl font-bold text-gray-900 ${poppins.className}`}
                 >
                   Welcome Instructor
                 </h1>
-                <p
-                  className={`text-base sm:text-lg text-gray-500 ${poppins.className}`}
-                  style={{ marginLeft: 5, paddingLeft: 0 }}
-                >
+                <p className={`text-base sm:text-lg text-gray-500 ${poppins.className}`}>
                   {formattedDate}
                 </p>
               </div>
 
+              {/* Options Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
                 <button
                   onClick={handleQuizGenerator}
@@ -93,7 +101,20 @@ export default function InstructorPage() {
                   className="group relative flex flex-col items-start gap-4 p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-400 hover:shadow-xl transition-all duration-300 hover:scale-105"
                 >
                   <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
-                    <img src="/Qbubble.png" alt="Analytics Dashboard" className="w-8 h-8" />
+                    <svg
+                      className="w-8 h-8"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+                      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+                      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+                    </svg>
                   </div>
                   <div className="flex-1">
                     <h2
@@ -109,6 +130,58 @@ export default function InstructorPage() {
                   </div>
                   <div className="flex items-center gap-2 text-blue-600 font-semibold">
                     <span className={poppins.className}>View Dashboard</span>
+                    <svg
+                      className="w-5 h-5 group-hover:translate-x-1 transition-transform"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5l7 7-7 7"
+                      />
+                    </svg>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handlePolicyServices}
+                  className="group relative flex flex-col items-start gap-4 p-8 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 hover:border-green-400 hover:shadow-xl transition-all duration-300 hover:scale-105"
+                >
+                  <div className="flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-green-500 to-green-700 text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                    <svg
+                      className="w-8 h-8"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                      />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h2
+                      className={`text-2xl font-bold text-green-900 mb-2 ${poppins.className}`}
+                    >
+                      AI & Content Scope
+                    </h2>
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 mb-2">
+                      Preview
+                    </span>
+                    <p
+                      className={`text-base text-gray-600 ${poppins.className}`}
+                    >
+                      Configure assistant guardrails, allowed content sources, and institution policy alignment for your class.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-green-600 font-semibold">
+                    <span className={poppins.className}>Open Settings</span>
                     <svg
                       className="w-5 h-5 group-hover:translate-x-1 transition-transform"
                       fill="none"

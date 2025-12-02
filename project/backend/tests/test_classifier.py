@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Covers turn classification heuristics vs model-backed classifier behavior."""
+
 from types import SimpleNamespace
 
 import pytest

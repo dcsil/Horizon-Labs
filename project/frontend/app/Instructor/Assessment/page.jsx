@@ -16,6 +16,9 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8
 const DELETE_INGEST_ENDPOINT = `${API_BASE_URL}/ingest/document`;
 const QUIZ_DEFINITION_ENDPOINT = `${API_BASE_URL}/quiz/definitions`;
 
+/**
+ * Assessment quiz builder that configures timed exams from uploaded course material.
+ */
 export default function QuizGenerator2Page() {
   const router = useRouter();
   const [formData, setFormData] = useState({
@@ -40,6 +43,7 @@ export default function QuizGenerator2Page() {
   const hydratedDefinitionIdRef = useRef(null);
   const isHydratingRef = useRef(true);
 
+  /** Hydrates the assessment form with data from an existing quiz definition. */
   const hydrateFromDefinition = useCallback(async (quizId) => {
     if (!quizId) return;
     try {
@@ -193,6 +197,7 @@ export default function QuizGenerator2Page() {
     hydrateFromDefinition(existingQuizId);
   }, [existingQuizId, hydrateFromDefinition]);
 
+  /** Handles quiz form field changes for standard inputs. */
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
@@ -201,10 +206,12 @@ export default function QuizGenerator2Page() {
     }));
   };
 
+  /** Tracks the topic input field. */
   const handleTopicInputChange = (e) => {
     setTopicInput(e.target.value);
   };
 
+  /** Appends a cleaned topic to the list if it's unique. */
   const handleAddTopic = () => {
     const cleanedTopic = topicInput.trim();
     if (!cleanedTopic || formData.topicsToTest.includes(cleanedTopic)) {
@@ -218,6 +225,7 @@ export default function QuizGenerator2Page() {
     setTopicInput("");
   };
 
+  /** Removes a topic from the quiz focus list. */
   const handleRemoveTopic = (topicToRemove) => {
     setFormData((prev) => ({
       ...prev,
@@ -225,6 +233,7 @@ export default function QuizGenerator2Page() {
     }));
   };
 
+  /** Deletes the ingested document backing this quiz, if one exists. */
   const deleteDocumentFromIndex = async () => {
     if (!documentId) return;
     try {
@@ -236,6 +245,7 @@ export default function QuizGenerator2Page() {
     }
   };
 
+  /** Deletes a quiz definition from the backend. */
   const deleteQuizDefinition = async (quizId) => {
     if (!quizId) return;
     try {
@@ -247,6 +257,7 @@ export default function QuizGenerator2Page() {
     }
   };
 
+  /** Displays a transient save/publish success message. */
   const showSaveSuccess = (message = "Saved to your list.") => {
     setSaveStatus(message);
     if (saveStatusTimeoutRef.current) {
@@ -255,6 +266,7 @@ export default function QuizGenerator2Page() {
     saveStatusTimeoutRef.current = setTimeout(() => setSaveStatus(""), 4000);
   };
 
+  /** Stores preview payload so the quiz runner can simulate the assessment. */
   const persistPreviewState = (metaPayload) => {
     try {
       if (typeof window === "undefined") return;
@@ -267,6 +279,7 @@ export default function QuizGenerator2Page() {
     }
   };
 
+  /** Validates the quiz config, saves it, and opens the preview runner. */
   const handlePreviewQuiz = async () => {
     const trimmedTitle = formData.title.trim();
     const trimmedDescription = formData.description.trim();
@@ -306,6 +319,7 @@ export default function QuizGenerator2Page() {
     }
   };
 
+  /** Creates or updates the assessment quiz definition in the backend. */
   const saveQuizRecord = async ({ publishState } = {}) => {
     const trimmedTitle = formData.title.trim();
     const trimmedDescription = formData.description.trim();
@@ -320,6 +334,7 @@ export default function QuizGenerator2Page() {
       return false;
     }
 
+    /** Parses a user-provided value into an integer if possible. */
     const toInteger = (value) => {
       if (value === undefined || value === null || value === "") return null;
       const match = String(value).match(/\d+/);
@@ -403,32 +418,41 @@ export default function QuizGenerator2Page() {
     }
   };
 
+  /** Placeholder handler to save quiz drafts (implementation pending). */
   const handleSaveQuiz = async () => {};
 
+  /** Placeholder handler for publishing/unpublishing quizzes. */
   const handlePublishQuiz = async () => {};
 
+  /** Placeholder handler for opening the delete confirmation modal. */
   const handleDeleteQuiz = () => {};
 
+  /** Confirms deletion of the quiz and closes the modal placeholder. */
   const confirmDeleteQuiz = async () => {
     setIsDeleteModalOpen(false);
   };
 
+  /** Closes the delete confirmation modal without changes. */
   const cancelDeleteQuiz = () => {
     setIsDeleteModalOpen(false);
   };
 
+  /** Opens the exit modal before navigating back to the quiz list. */
   const handleBackToQuizList = () => {
     setIsExitModalOpen(true);
   };
 
+  /** Placeholder for leaving the page without persisting changes. */
   const handleLeaveWithoutSaving = async () => {
     setIsExitModalOpen(false);
   };
 
+  /** Placeholder for saving state and exiting to the quiz list. */
   const handleSaveAndExit = async () => {
     setIsExitModalOpen(false);
   };
 
+  /** Keeps the user on the builder and closes the exit modal. */
   const handleStayOnPage = () => {
     setIsExitModalOpen(false);
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Poppins } from "next/font/google";
 
@@ -21,6 +21,7 @@ const DRAFT_STORAGE_KEYS = [
   "quizPreviewResponses",
 ];
 
+/** Removes any persisted quiz drafts or preview data from localStorage. */
 const clearStoredQuizDrafts = () => {
   if (typeof window === "undefined") {
     return;
@@ -35,6 +36,7 @@ const clearStoredQuizDrafts = () => {
   }
 };
 
+/** Ensures a stable session id exists for the ingestion workflow. */
 const ensureSessionId = () => {
   if (typeof window === "undefined") return "";
   const storageKey = "quizGeneratorSessionId";
@@ -49,6 +51,9 @@ const ensureSessionId = () => {
   return sessionId;
 };
 
+/**
+ * Landing experience for instructors to pick quiz mode, upload content, and ingest slides.
+ */
 export default function QuizGeneratorPage() {
   const router = useRouter();
   const [selectedMode, setSelectedMode] = useState("practice");
@@ -60,11 +65,13 @@ export default function QuizGeneratorPage() {
   const [ingestedDocumentId, setIngestedDocumentId] = useState(null);
   const [ingestedFilename, setIngestedFilename] = useState(null);
 
+  /** Updates quiz mode and clears any ingest error state. */
   const handleModeSelect = (mode) => {
     setSelectedMode(mode);
     setIngestError(null);
   };
 
+  /** Captures the uploaded file reference and resets ingest messages. */
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -74,6 +81,7 @@ export default function QuizGeneratorPage() {
     }
   };
 
+  /** Persists the selected mode and uploaded metadata before navigating to the builder. */
   const saveSeedAndNavigate = () => {
     try {
       if (typeof window !== "undefined") {
@@ -100,6 +108,7 @@ export default function QuizGeneratorPage() {
     }
   };
 
+  /** Validates input and advances to the appropriate quiz builder. */
   const handleNext = () => {
     if (selectedMode !== "assessment") {
       if (!uploadedFile) {
@@ -114,6 +123,7 @@ export default function QuizGeneratorPage() {
     saveSeedAndNavigate();
   };
 
+  /** Uploads and ingests the selected file, replacing any previous document. */
   const handleIngest = async () => {
     if (!uploadedFile) {
       setIngestError("Please upload a file to ingest.");
@@ -175,7 +185,10 @@ export default function QuizGeneratorPage() {
     }
   };
 
+  /** Opens the exit confirmation modal before leaving the generator. */
   const handleBackToQuizList = () => setIsExitModalOpen(true);
+
+  /** Cleans up any ingested document then returns to the quiz list. */
   const handleProceedExit = async () => {
     setIsExitModalOpen(false);
     try {
@@ -190,6 +203,8 @@ export default function QuizGeneratorPage() {
       router.push("/Instructor/Quizzes");
     }
   };
+
+  /** Closes the exit confirmation modal and stays on the page. */
   const handleStay = () => setIsExitModalOpen(false);
 
   const canProceed =

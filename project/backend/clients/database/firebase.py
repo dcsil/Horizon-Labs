@@ -1,4 +1,5 @@
-"""Firestore client bootstrapper."""
+"""Helpers to initialize a Google Cloud Firestore client for chat/quiz persistence.
+Relies on google-cloud-firestore, FIREBASE_PROJECT_ID, and application credentials."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ except Exception:  # pragma: no cover - optional dependency missing
 
 
 def get_firestore():
-    """Return a Firestore client using your Firebase project credentials."""
+    """Construct and return a Firestore client using FIREBASE_PROJECT_ID and default credentials."""
 
     if firestore is None:
         raise RuntimeError(
