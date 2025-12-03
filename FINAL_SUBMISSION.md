@@ -275,7 +275,7 @@ In addition, we chose to show a static prototype of the policy editor and flashc
 [↑ Back to Table of Contents](#table-of-contents)
 
 Here is the updated architecture diagram reflecting our final MVP implementation:  
-![Final MVP Architecture Diagram](path/to/final-architecture-diagram.png) <!-- Replace path with actual file when added -->
+![Final MVP Architecture Diagram](https://github.com/dcsil/Horizon-Labs/blob/master/architecture/diagram.png) 
 
 ### Integration mapping (code links)
 - Student adaptive chat UI → [project/frontend/app/Student/Chat/page.jsx](project/frontend/app/Student/Chat/page.jsx): streams chat via `/chat/stream`, shows friction/guidance state, diagnostics, and session history.
