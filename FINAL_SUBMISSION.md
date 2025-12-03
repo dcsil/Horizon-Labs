@@ -3,7 +3,10 @@ This document contains the written portion of our final submission for CSC491, d
 
 ***Disclaimer**: This code in the "project" folder is a copy of the production code which can be found in Horizon Labs' [code repository](https://github.com/oliviaw12/horizon-labs-code). This document and the code here is provided to centralize all project-related material for ease of access to markers and reviewers. The repository where we made the code changes and hosted the live application is separate and linked in this disclaimer.*
 
+## Key Links
 **Link to the hosted application:** [LearnLLM by Horizon Labs](https://horizon-labs-code.vercel.app/)
+**Link to the demo video:** [LearnLLM MVP Demo](https://youtu.be/od7IbT6mm-k)
+**Link to the code repository:** [Horizon Labs Code Repository](https://github.com/oliviaw12/horizon-labs-code)
 
 # Table of Contents
 1. [Product Overview](#1-product-overview)
