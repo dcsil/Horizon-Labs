@@ -5,7 +5,9 @@ This document contains the written portion of our final submission for CSC491, d
 
 ## Key Links
 **Link to the hosted application:** [LearnLLM by Horizon Labs](https://horizon-labs-code.vercel.app/)
+
 **Link to the demo video:** [LearnLLM MVP Demo](https://youtu.be/od7IbT6mm-k)
+
 **Link to the code repository:** [Horizon Labs Code Repository](https://github.com/oliviaw12/horizon-labs-code)
 
 # Table of Contents
